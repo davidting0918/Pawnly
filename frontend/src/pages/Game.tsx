@@ -1,36 +1,72 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Chess } from 'chess.js';
 import { Chessboard } from 'react-chessboard';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Copy } from 'lucide-react';
+import { ArrowLeft, Copy, Wifi, WifiOff } from 'lucide-react';
 
 const Game: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [game, setGame] = useState(new Chess());
+  const [isConnected, setIsConnected] = useState(false);
+  const ws = useRef<WebSocket | null>(null);
 
-  function makeAMove(move: any) {
-    const gameCopy = new Chess(game.fen());
-    try {
-      const result = gameCopy.move(move);
-      setGame(gameCopy);
-      return result; // null if illegal move
-    } catch (e) {
-      return null;
-    }
-  }
+  useEffect(() => {
+    // Connect to WebSocket
+    const socket = new WebSocket(`ws://localhost:8000/ws/game/${id}`);
+    
+    socket.onopen = () => {
+      console.log('Connected to game room');
+      setIsConnected(true);
+    };
+
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      
+      if (data.type === 'init') {
+        setGame(new Chess(data.fen));
+      } else if (data.type === 'update') {
+        setGame(new Chess(data.fen));
+      } else if (data.type === 'error') {
+        console.error(data.message);
+      }
+    };
+
+    socket.onclose = () => setIsConnected(false);
+    
+    ws.current = socket;
+
+    return () => {
+      socket.close();
+    };
+  }, [id]);
 
   function onDrop(sourceSquare: string, targetSquare: string) {
-    const move = makeAMove({
+    // Optimistic UI update (optional, but safer to wait for server or validate locally first)
+    const movePayload = {
+      type: 'move',
       from: sourceSquare,
-      to: targetSquare,
-      promotion: 'q', // always promote to queen for simplicity
-    });
+      to: targetSquare
+    };
 
-    if (move === null) return false;
-    
-    // Here we would send WebSocket message
-    return true;
+    // Send to server
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify(movePayload));
+      // We don't update local state here; we wait for the server broadcast
+      // OR we can try to move locally to validate logic before sending
+      try {
+          const tempGame = new Chess(game.fen());
+          const move = tempGame.move({
+              from: sourceSquare,
+              to: targetSquare,
+              promotion: 'q'
+          });
+          if (move) return true; // Allow piece to snap (react-chessboard needs this)
+      } catch (e) {
+          return false;
+      }
+    }
+    return false;
   }
 
   return (
@@ -43,7 +79,7 @@ const Game: React.FC = () => {
         <div className="flex items-center gap-4 bg-pawnly-board px-4 py-2 rounded-full border border-gray-600">
           <span className="text-gray-400">Room Code:</span>
           <span className="font-mono font-bold text-xl">{id}</span>
-          <Copy size={16} className="cursor-pointer hover:text-white text-gray-400" />
+          {isConnected ? <Wifi size={16} className="text-green-500" /> : <WifiOff size={16} className="text-red-500" />}
         </div>
         <div className="w-20"></div> {/* Spacer */}
       </div>

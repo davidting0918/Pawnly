@@ -2,13 +2,14 @@ from fastapi import FastAPI, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
-from app.api import auth
+from app.api import auth, game
 import uvicorn
 
 app = FastAPI(title="Pawnly API", version="0.1.0")
 
 # Include Routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(game.router, tags=["game"]) # WebSocket route is at root /ws usually, but router handles prefix
 
 @app.get("/")
 async def root():
