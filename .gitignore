@@ -1,0 +1,20 @@
+# Environments
+.env
+.env.*
+!.env.example
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# Frontend
+node_modules/
+dist/
+build/
+.DS_Store
