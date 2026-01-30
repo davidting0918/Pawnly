@@ -1,11 +1,27 @@
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
 from app.api import auth, game
 import uvicorn
+import os
 
 app = FastAPI(title="Pawnly API", version="0.1.0")
+
+# CORS Setup
+origins = [
+    "http://localhost:5173", # Local Vite
+    os.getenv("FRONTEND_URL", ""), # Production Frontend
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Include Routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])

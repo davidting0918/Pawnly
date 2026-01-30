@@ -12,8 +12,9 @@ const Game: React.FC = () => {
   const ws = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    // Connect to WebSocket
-    const socket = new WebSocket(`ws://localhost:8000/ws/game/${id}`);
+    // Connect to WebSocket using Env Variable
+    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
+    const socket = new WebSocket(`${wsUrl}/ws/game/${id}`);
     
     socket.onopen = () => {
       console.log('Connected to game room');
