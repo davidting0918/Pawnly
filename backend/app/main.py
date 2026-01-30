@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
-from app.api import auth, game
+from app.api import auth, game, users
 import uvicorn
 import os
 
@@ -11,8 +11,7 @@ app = FastAPI(title="Pawnly API", version="0.1.0")
 
 # CORS Setup
 origins = [
-    "http://localhost:5173", # Local Vite
-    os.getenv("FRONTEND_URL", ""), # Production Frontend
+    os.getenv("FRONTEND_URL", "http://localhost:5173"),
 ]
 
 app.add_middleware(
@@ -25,7 +24,8 @@ app.add_middleware(
 
 # Include Routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-app.include_router(game.router, tags=["game"]) # WebSocket route is at root /ws usually, but router handles prefix
+app.include_router(game.router, tags=["game"])
+app.include_router(users.router, prefix="/api/users", tags=["users"])
 
 @app.get("/")
 async def root():
@@ -41,5 +41,4 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         return {"status": "error", "db": str(e)}
 
 if __name__ == "__main__":
-    # Allow running via `python -m app.main`
     uvicorn.run(app, host="0.0.0.0", port=8000)
