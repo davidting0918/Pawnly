@@ -12,3 +12,11 @@ class GameSimple(BaseModel):
 
     class Config:
         from_attributes = True
+
+class GameResponse(BaseModel):
+    id: int
+    room_code: str
+    status: str
+    
+    class Config:
+        from_attributes = True

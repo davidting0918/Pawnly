@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
-from app.api import auth, game, users
+from app.api import auth, game, users, games
 import uvicorn
 import os
 
@@ -26,6 +26,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(game.router, tags=["game"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
+app.include_router(games.router, prefix="/api/games", tags=["games"])
 
 @app.get("/")
 async def root():

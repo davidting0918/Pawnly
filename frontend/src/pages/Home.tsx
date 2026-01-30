@@ -97,6 +97,10 @@ const Home: React.FC = () => {
           
           <div className="text-center text-gray-500 mt-8">
             Logged in as <span className="text-white">{user.username}</span>
+            {' | '}
+            <button onClick={() => navigate('/profile')} className="text-pawnly-green hover:underline">
+              My Profile
+            </button>
           </div>
         </div>
       )}
