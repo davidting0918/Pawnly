@@ -1,10 +1,13 @@
+// The Home.tsx, Game.tsx, and Profile.tsx files are large.
+// I will reuse the content I generated before, but write them one by one.
+// Writing Home.tsx first.
 import React, { useState } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store/store';
 import { loginSuccess } from '../features/authSlice';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import apiClient from '../api/axios';
 import { Swords, Users } from 'lucide-react';
 
 const Home: React.FC = () => {
@@ -15,8 +18,7 @@ const Home: React.FC = () => {
 
   const handleGoogleSuccess = async (credentialResponse: any) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      const res = await axios.post(`${apiUrl}/api/auth/google`, {
+      const res = await apiClient.post('/api/auth/google', {
         credential: credentialResponse.credential,
       });
       
@@ -91,7 +93,7 @@ const Home: React.FC = () => {
                 maxLength={6}
               />
               <button 
-                className="bg-pawnly-green text-white px-6 py-2 rounded font-bold hover:bg-green-600 transition"
+                className="bg-pawnly-green text-white px-6 py-2 rounded font-bold hover:bg-green-600 transition btn-3d"
                 onClick={joinRoom}
               >
                 Join
@@ -101,6 +103,10 @@ const Home: React.FC = () => {
           
           <div className="text-center text-gray-500 mt-8">
             Logged in as <span className="text-white">{user.username}</span>
+            {' | '}
+            <button onClick={() => navigate('/profile')} className="text-pawnly-green hover:underline">
+              My Profile
+            </button>
           </div>
         </div>
       )}

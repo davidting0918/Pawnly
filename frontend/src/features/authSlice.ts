@@ -1,4 +1,4 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
 interface User {
   id: number;
@@ -23,12 +23,12 @@ const authSlice = createSlice({
     loginSuccess: (state, action: PayloadAction<User>) => {
       state.user = action.payload;
       state.isAuthenticated = true;
-      localStorage.setItem('token', action.payload.token);
+      // No need to set localStorage here, redux-persist handles it
     },
     logout: (state) => {
       state.user = null;
       state.isAuthenticated = false;
-      localStorage.removeItem('token');
+      // redux-persist will clear storage on logout if configured
     },
   },
 });
