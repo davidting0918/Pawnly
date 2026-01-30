@@ -1,3 +1,4 @@
+// Writing Profile.tsx
 import React, { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store/store';
@@ -31,7 +32,6 @@ const Profile: React.FC = () => {
   return (
     <div className="min-h-screen bg-pawnly-dark text-white p-8">
       <div className="max-w-4xl mx-auto">
-        {/* Profile Header */}
         <div className="flex items-center gap-6 mb-12">
           <div className="w-24 h-24 bg-pawnly-board rounded-full flex items-center justify-center border-4 border-gray-700">
             <User size={48} />
@@ -40,12 +40,9 @@ const Profile: React.FC = () => {
             <h1 className="text-4xl font-bold">{currentUser.username}</h1>
             <div className="flex items-center gap-4 text-gray-400 mt-2">
               <span className="flex items-center gap-2"><ShieldCheck size={16} /> ELO: 1200</span>
-              <span className="flex items-center gap-2"><Calendar size={16} /> Joined: ...</span>
             </div>
           </div>
         </div>
-
-        {/* Game History */}
         <h2 className="text-2xl font-bold mb-6 flex items-center gap-3"><BarChart3 /> Recent Games</h2>
         <div className="bg-pawnly-board rounded-lg border border-gray-700">
           <ul className="divide-y divide-gray-700">
@@ -55,10 +52,10 @@ const Profile: React.FC = () => {
                   <Swords className={game.winner_id === currentUser.id ? 'text-pawnly-green' : 'text-red-500'} />
                   <div>
                     <p className="font-bold">
-                      vs {game.white_player.username === currentUser.username ? game.black_player.username : game.white_player.username}
+                      vs {game.white_player?.username === currentUser.username ? game.black_player?.username : game.white_player?.username}
                     </p>
                     <p className={`text-sm ${game.winner_id === currentUser.id ? 'text-green-400' : 'text-red-400'}`}>
-                      {game.winner_id === currentUser.id ? 'Win' : 'Loss'} - {game.status}
+                      {game.winner_id === currentUser.id ? 'Win' : 'Loss'}
                     </p>
                   </div>
                 </div>
@@ -67,7 +64,6 @@ const Profile: React.FC = () => {
             ))}
           </ul>
         </div>
-
       </div>
     </div>
   );
