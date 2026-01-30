@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import { useDispatch, useSelector } from 'react-redux';
-import { RootState } from '../store/store';
+import type { RootState } from '../store/store';
 import { loginSuccess } from '../features/authSlice';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/axios';
