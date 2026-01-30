@@ -30,10 +30,14 @@ const Home: React.FC = () => {
     }
   };
 
-  const createRoom = () => {
-    // Generate random code for demo (Backend should handle this)
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    navigate(`/game/${code}`);
+  const createRoom = async () => {
+    try {
+      const res = await apiClient.post('/api/games/create');
+      const { room_code } = res.data;
+      navigate(`/game/${room_code}`);
+    } catch (error) {
+      console.error("Failed to create room", error);
+    }
   };
 
   const joinRoom = () => {
