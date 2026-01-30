@@ -2,8 +2,33 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 body {
-  background-color: #302E2B;
-  color: #C3C3C3;
-  font-family: 'Inter', sans-serif;
+  margin: 0;
+  background-color: #262522; /* pawnly-dark */
+  color: #EAEAEA;
+}
+
+@layer components {
+  .btn-3d {
+    @apply relative overflow-hidden rounded-lg transition-all duration-200 ease-out;
+    @apply shadow-3d active:shadow-3d-pressed;
+    background: linear-gradient(135deg, #81B64C 0%, #81B64C 50%, #75a344 100%); /* pawnly-green */
+    transform: translateY(0px);
+  }
+
+  .btn-3d:hover {
+    @apply shadow-3d-hover;
+    transform: translateY(-2px);
+  }
+
+  .btn-3d:active {
+    @apply shadow-3d-pressed;
+    transform: translateY(1px);
+  }
 }
