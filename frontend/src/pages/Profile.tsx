@@ -1,7 +1,7 @@
 // Writing Profile.tsx
 import React, { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
-import { RootState } from '../store/store';
+import type { RootState } from '../store/store';
 import apiClient from '../api/axios';
 import { User, ShieldCheck, Calendar, BarChart3, Swords } from 'lucide-react';
 import { format } from 'date-fns';
