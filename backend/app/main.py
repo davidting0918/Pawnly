@@ -34,3 +34,16 @@ app.include_router(users.router, prefix="/api/users", tags=["users"])
 @app.get("/")
 async def root():
     return {"message": "Welcome to Pawnly API - Easy Chess Platform"}
+
+@app.get("/health")
+async def health_check():
+    try:
+        # Simple query to check DB connection
+        result = await db_client.read_one("SELECT 1")
+        # asyncpg returns keys like '?column?' for unnamed columns
+        if result and result.get('?column?') == 1:
+            return {"status": "ok", "db": "connected"}
+        else:
+            return {"status": "error", "db": "query failed"}
+    except Exception as e:
+        return {"status": "error", "db": str(e)}
