@@ -69,6 +69,7 @@ FAKE_GAME_WAITING = {
     "pgn": "",
     "status": "waiting",
     "winner_id": None,
+    "time_per_move": None,
     "created_at": datetime(2026, 2, 1),
     "updated_at": datetime(2026, 2, 1),
 }

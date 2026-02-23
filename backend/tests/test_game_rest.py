@@ -17,7 +17,9 @@ class TestCreateGame:
     @pytest.mark.asyncio
     async def test_create_game_white(self, client, mock_db, auth_headers_white):
         mock_db.read_one.return_value = FAKE_USER_WHITE
-        mock_db.execute_returning.return_value = {"id": 10, "room_code": "ABC123", "status": "waiting"}
+        mock_db.execute_returning.return_value = {
+            "id": 10, "room_code": "ABC123", "status": "waiting", "time_per_move": None,
+        }
 
         resp = await client.post("/api/games", json={"side": "white"}, headers=auth_headers_white)
         assert resp.status_code == 200
@@ -25,11 +27,14 @@ class TestCreateGame:
         assert data["status"] == "waiting"
         assert data["side"] == "white"
         assert len(data["room_code"]) == 6
+        assert data["time_per_move"] is None
 
     @pytest.mark.asyncio
     async def test_create_game_black(self, client, mock_db, auth_headers_white):
         mock_db.read_one.return_value = FAKE_USER_WHITE
-        mock_db.execute_returning.return_value = {"id": 10, "room_code": "ABC123", "status": "waiting"}
+        mock_db.execute_returning.return_value = {
+            "id": 10, "room_code": "ABC123", "status": "waiting", "time_per_move": None,
+        }
 
         resp = await client.post("/api/games", json={"side": "black"}, headers=auth_headers_white)
         assert resp.status_code == 200
@@ -40,11 +45,30 @@ class TestCreateGame:
     async def test_create_game_default_white(self, client, mock_db, auth_headers_white):
         """Default side should be white."""
         mock_db.read_one.return_value = FAKE_USER_WHITE
-        mock_db.execute_returning.return_value = {"id": 10, "room_code": "ABC123", "status": "waiting"}
+        mock_db.execute_returning.return_value = {
+            "id": 10, "room_code": "ABC123", "status": "waiting", "time_per_move": None,
+        }
 
         resp = await client.post("/api/games", json={}, headers=auth_headers_white)
         assert resp.status_code == 200
         assert resp.json()["side"] == "white"
+
+    @pytest.mark.asyncio
+    async def test_create_game_with_time_per_move(self, client, mock_db, auth_headers_white):
+        """Creating a game with time_per_move should include it in the response."""
+        mock_db.read_one.return_value = FAKE_USER_WHITE
+        mock_db.execute_returning.return_value = {
+            "id": 10, "room_code": "ABC123", "status": "waiting", "time_per_move": 30,
+        }
+
+        resp = await client.post(
+            "/api/games",
+            json={"side": "white", "time_per_move": 30},
+            headers=auth_headers_white,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["time_per_move"] == 30
 
     @pytest.mark.asyncio
     async def test_create_game_invalid_side(self, client, mock_db, auth_headers_white):
@@ -60,7 +84,9 @@ class TestCreateGame:
     @pytest.mark.asyncio
     async def test_create_game_returns_id(self, client, mock_db, auth_headers_white):
         mock_db.read_one.return_value = FAKE_USER_WHITE
-        mock_db.execute_returning.return_value = {"id": 42, "room_code": "ZZZ999", "status": "waiting"}
+        mock_db.execute_returning.return_value = {
+            "id": 42, "room_code": "ZZZ999", "status": "waiting", "time_per_move": None,
+        }
 
         resp = await client.post("/api/games", json={"side": "white"}, headers=auth_headers_white)
         assert resp.json()["id"] == 42
@@ -129,6 +155,7 @@ class TestGetGame:
         assert resp.status_code == 200
         data = resp.json()
         assert data["room_code"] == "ABC123"
+        assert "time_per_move" in data
         mock_db.read_one.side_effect = None
 
     @pytest.mark.asyncio
@@ -141,8 +168,6 @@ class TestGetGame:
     @pytest.mark.asyncio
     async def test_get_game_blocked_for_non_player(self, client, mock_db, auth_headers_black):
         """User not in the game should get 403."""
-        # FAKE_GAME_WAITING has white_player_id=1, black_player_id=None
-        # auth_headers_black is user id=2
         mock_db.read_one.side_effect = [FAKE_USER_BLACK, FAKE_GAME_WAITING]
         resp = await client.get("/api/games/ABC123", headers=auth_headers_black)
         assert resp.status_code == 403
