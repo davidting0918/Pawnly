@@ -5,7 +5,7 @@ import type { RootState } from '../store/store';
 import { loginSuccess, logout } from '../features/authSlice';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/axios';
-import { Users, Crown, LogOut, User, Plus, ArrowRight, Sparkles, Clock, Timer } from 'lucide-react';
+import { Users, Crown, LogOut, User, Plus, ArrowRight, Sparkles, Timer } from 'lucide-react';
 
 const TIME_OPTIONS = [
   { label: 'No limit', value: null },
