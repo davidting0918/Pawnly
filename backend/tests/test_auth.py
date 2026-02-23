@@ -77,11 +77,13 @@ class TestProtectedAccess:
     @pytest.mark.asyncio
     async def test_valid_token_with_existing_user_passes(self, client, mock_db):
         """Valid token + user in DB should pass auth."""
-        # Auth: get_current_user calls read_one
-        # create_game: calls execute_returning
         mock_db.read_one.return_value = FAKE_USER_WHITE
         mock_db.execute_returning.return_value = {"id": 10, "room_code": "XYZ789", "status": "waiting"}
-        resp = await client.post("/api/games", headers={"Authorization": f"Bearer {make_token(FAKE_USER_WHITE)}"})
+        resp = await client.post(
+            "/api/games",
+            json={"side": "white"},
+            headers={"Authorization": f"Bearer {make_token(FAKE_USER_WHITE)}"},
+        )
         assert resp.status_code == 200
 
 

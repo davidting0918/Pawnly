@@ -4,7 +4,10 @@ import { Chessboard } from 'react-chessboard';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../store/store';
-import { ArrowLeft, Copy, Check, Wifi, WifiOff, Flag, RotateCcw, Clock } from 'lucide-react';
+import apiClient from '../api/axios';
+import { ArrowLeft, Copy, Check, WifiOff, Flag, RotateCcw, Clock, ShieldX } from 'lucide-react';
+
+type GamePhase = 'loading' | 'joining' | 'waiting' | 'playing' | 'finished' | 'blocked';
 
 const Game: React.FC = () => {
   const { id: roomCode } = useParams<{ id: string }>();
@@ -14,53 +17,127 @@ const Game: React.FC = () => {
   const [game, setGame] = useState(new Chess());
   const [isConnected, setIsConnected] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [gameStatus, setGameStatus] = useState<string>('waiting');
-  const [gameOver, setGameOver] = useState(false);
+  const [phase, setPhase] = useState<GamePhase>('loading');
+  const [mySide, setMySide] = useState<'w' | 'b' | null>(null);
   const [gameOverReason, setGameOverReason] = useState('');
   const [winnerId, setWinnerId] = useState<number | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
   const ws = useRef<WebSocket | null>(null);
 
+  // Step 1: Check game state and auto-join if needed
   useEffect(() => {
-    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
-    const socket = new WebSocket(`${wsUrl}/api/ws/game/${roomCode}`);
+    if (!user || !roomCode) return;
 
-    socket.onopen = () => setIsConnected(true);
+    const initGame = async () => {
+      try {
+        // Try to get game info
+        const res = await apiClient.get(`/api/games/${roomCode}`);
+        const gameData = res.data;
 
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+        const isWhite = gameData.white_player_id === user.id;
+        const isBlack = gameData.black_player_id === user.id;
 
-      if (data.type === 'init') {
-        setGame(new Chess(data.fen));
-        setGameStatus(data.status);
-      } else if (data.type === 'update') {
-        setGame(new Chess(data.fen));
-        setGameStatus(data.status);
-        if (data.game_over) {
-          setGameOver(true);
-          setWinnerId(data.winner_id ?? null);
-          if (data.checkmate) setGameOverReason('Checkmate');
-          else if (data.stalemate) setGameOverReason('Stalemate');
-          else setGameOverReason('Draw');
+        if (isWhite || isBlack) {
+          // Already a player
+          setMySide(isWhite ? 'w' : 'b');
+          setPhase(gameData.status === 'waiting' ? 'waiting' : 'playing');
+          connectWs();
+        } else if (gameData.status === 'waiting') {
+          // Not a player yet, try to join
+          setPhase('joining');
+          try {
+            const joinRes = await apiClient.post(`/api/games/${roomCode}/join`);
+            setMySide(joinRes.data.side === 'white' ? 'w' : 'b');
+            setPhase('playing');
+            connectWs();
+          } catch (joinErr: any) {
+            setErrorMsg(joinErr.response?.data?.detail || 'Failed to join game');
+            setPhase('blocked');
+          }
+        } else {
+          // Game is active/finished and user is not a player
+          setPhase('blocked');
+          setErrorMsg('You are not a player in this game');
         }
-      } else if (data.type === 'game_over') {
-        setGameOver(true);
-        setWinnerId(data.winner_id ?? null);
-        setGameOverReason(data.reason === 'resign' ? 'Resignation' : 'Game Over');
-        if (data.fen) setGame(new Chess(data.fen));
-      } else if (data.type === 'error') {
-        console.error('Server:', data.message);
+      } catch (err: any) {
+        if (err.response?.status === 403) {
+          setPhase('blocked');
+          setErrorMsg('You are not a player in this game');
+        } else if (err.response?.status === 404) {
+          setPhase('blocked');
+          setErrorMsg('Game not found');
+        } else {
+          setPhase('blocked');
+          setErrorMsg('Failed to load game');
+        }
       }
     };
 
-    socket.onclose = () => setIsConnected(false);
-    ws.current = socket;
+    const connectWs = () => {
+      const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
+      const socket = new WebSocket(`${wsUrl}/api/ws/game/${roomCode}`);
 
-    return () => { socket.close(); };
-  }, [roomCode]);
+      socket.onopen = () => {
+        // Send auth message first
+        socket.send(JSON.stringify({ type: 'auth', user_id: user.id }));
+        setIsConnected(true);
+      };
+
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'init') {
+          setGame(new Chess(data.fen));
+          setMySide(data.your_side);
+          if (data.status === 'waiting') {
+            setPhase('waiting');
+          } else {
+            setPhase('playing');
+          }
+        } else if (data.type === 'update') {
+          setGame(new Chess(data.fen));
+          if (data.status === 'active' && phase === 'waiting') {
+            setPhase('playing');
+          }
+          if (data.game_over) {
+            setPhase('finished');
+            setWinnerId(data.winner_id ?? null);
+            if (data.checkmate) setGameOverReason('Checkmate');
+            else if (data.stalemate) setGameOverReason('Stalemate');
+            else setGameOverReason('Draw');
+          }
+        } else if (data.type === 'game_over') {
+          setPhase('finished');
+          setWinnerId(data.winner_id ?? null);
+          setGameOverReason(data.reason === 'resign' ? 'Resignation' : 'Game Over');
+          if (data.fen) setGame(new Chess(data.fen));
+        } else if (data.type === 'error') {
+          console.error('Server:', data.message);
+          if (data.message.includes('not a player')) {
+            setPhase('blocked');
+            setErrorMsg(data.message);
+          }
+        }
+      };
+
+      socket.onclose = () => setIsConnected(false);
+      ws.current = socket;
+    };
+
+    initGame();
+
+    return () => {
+      if (ws.current) ws.current.close();
+    };
+  }, [roomCode, user]);
 
   const onDrop = useCallback((sourceSquare: string, targetSquare: string) => {
-    if (gameOver) return false;
+    if (phase !== 'playing') return false;
     if (!ws.current || ws.current.readyState !== WebSocket.OPEN) return false;
+
+    // Check if it's my turn
+    const currentTurn = game.turn();
+    if (mySide !== currentTurn) return false;
 
     // Optimistic local validation
     try {
@@ -73,11 +150,11 @@ const Game: React.FC = () => {
 
     ws.current.send(JSON.stringify({ type: 'move', from: sourceSquare, to: targetSquare }));
     return true;
-  }, [game, gameOver]);
+  }, [game, phase, mySide]);
 
   const handleResign = () => {
     if (!ws.current || !user) return;
-    ws.current.send(JSON.stringify({ type: 'resign', user_id: user.id }));
+    ws.current.send(JSON.stringify({ type: 'resign' }));
   };
 
   const copyRoomCode = () => {
@@ -86,11 +163,40 @@ const Game: React.FC = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // ── Blocked Screen ──
+  if (phase === 'blocked') {
+    return (
+      <div className="min-h-screen gradient-bg flex flex-col items-center justify-center gap-6 p-4">
+        <div className="card max-w-sm w-full text-center">
+          <ShieldX size={48} className="text-red-400 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-white mb-2">Access Denied</h2>
+          <p className="text-zinc-500 text-sm mb-6">{errorMsg}</p>
+          <button onClick={() => navigate('/')} className="btn-primary w-full">
+            Back to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Loading Screen ──
+  if (phase === 'loading' || phase === 'joining') {
+    return (
+      <div className="min-h-screen gradient-bg flex items-center justify-center">
+        <div className="text-center">
+          <span className="inline-block w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mb-4" />
+          <p className="text-zinc-400">{phase === 'joining' ? 'Joining game…' : 'Loading…'}</p>
+        </div>
+      </div>
+    );
+  }
+
   const moves = game.history();
   const turn = game.turn() === 'w' ? 'White' : 'Black';
+  const isMyTurn = mySide === game.turn();
 
   const resultText = (() => {
-    if (!gameOver) return null;
+    if (phase !== 'finished') return null;
     if (!winnerId) return '½ – ½  Draw';
     if (user && winnerId === user.id) return '🎉  You won!';
     return 'You lost';
@@ -104,7 +210,6 @@ const Game: React.FC = () => {
           <ArrowLeft size={16} /> Back
         </button>
 
-        {/* Room code badge */}
         <button
           onClick={copyRoomCode}
           className="flex items-center gap-2 bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700 px-4 py-1.5 rounded-full transition-all"
@@ -114,7 +219,6 @@ const Game: React.FC = () => {
           {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} className="text-zinc-500" />}
         </button>
 
-        {/* Connection status */}
         <div className="flex items-center gap-2 text-xs">
           {isConnected ? (
             <span className="flex items-center gap-1.5 text-emerald-400">
@@ -132,6 +236,15 @@ const Game: React.FC = () => {
         </div>
       </nav>
 
+      {/* Waiting overlay */}
+      {phase === 'waiting' && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-3 text-center">
+          <p className="text-amber-400 text-sm font-medium">
+            ⏳ Waiting for opponent… Share the room code: <span className="font-mono font-bold">{roomCode}</span>
+          </p>
+        </div>
+      )}
+
       {/* Game Area */}
       <main className="flex-1 flex flex-col lg:flex-row items-center lg:items-start justify-center gap-6 p-4 sm:p-6 lg:p-8">
         {/* Chessboard */}
@@ -140,6 +253,7 @@ const Game: React.FC = () => {
             <Chessboard
               position={game.fen()}
               onPieceDrop={onDrop}
+              boardOrientation={mySide === 'b' ? 'black' : 'white'}
               customDarkSquareStyle={{ backgroundColor: '#779952' }}
               customLightSquareStyle={{ backgroundColor: '#e9edcc' }}
               animationDuration={200}
@@ -151,7 +265,7 @@ const Game: React.FC = () => {
         <div className="w-full lg:w-80 flex flex-col gap-4">
           {/* Turn / Status */}
           <div className="card">
-            {gameOver ? (
+            {phase === 'finished' ? (
               <div className="text-center">
                 <p className="text-lg font-bold text-white mb-1">{resultText}</p>
                 <p className="text-zinc-500 text-sm">{gameOverReason}</p>
@@ -167,9 +281,15 @@ const Game: React.FC = () => {
                 <div className="flex items-center gap-3">
                   <div className={`w-4 h-4 rounded-full border-2 ${game.turn() === 'w' ? 'bg-white border-zinc-400' : 'bg-zinc-900 border-zinc-600'}`} />
                   <div>
-                    <p className="text-white font-semibold">{turn}'s turn</p>
+                    <p className="text-white font-semibold">
+                      {isMyTurn ? 'Your turn' : `${turn}'s turn`}
+                    </p>
                     <p className="text-zinc-500 text-xs">
-                      {gameStatus === 'waiting' ? 'Waiting for opponent…' : game.isCheck() ? '🔴 Check!' : `Move ${Math.ceil(moves.length / 2) + 1}`}
+                      {phase === 'waiting'
+                        ? 'Waiting for opponent…'
+                        : game.isCheck()
+                        ? '🔴 Check!'
+                        : `You play ${mySide === 'w' ? 'White ♔' : 'Black ♚'}`}
                     </p>
                   </div>
                 </div>
@@ -197,7 +317,7 @@ const Game: React.FC = () => {
           </div>
 
           {/* Resign */}
-          {!gameOver && gameStatus === 'active' && (
+          {phase === 'playing' && (
             <button onClick={handleResign} className="btn-danger flex items-center justify-center gap-2">
               <Flag size={16} /> Resign
             </button>

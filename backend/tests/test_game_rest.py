@@ -15,21 +15,46 @@ from tests.conftest import (
 
 class TestCreateGame:
     @pytest.mark.asyncio
-    async def test_create_game_success(self, client, mock_db, auth_headers_white):
-        # Auth uses read_one, create_game uses execute_returning
+    async def test_create_game_white(self, client, mock_db, auth_headers_white):
         mock_db.read_one.return_value = FAKE_USER_WHITE
         mock_db.execute_returning.return_value = {"id": 10, "room_code": "ABC123", "status": "waiting"}
 
-        resp = await client.post("/api/games", headers=auth_headers_white)
+        resp = await client.post("/api/games", json={"side": "white"}, headers=auth_headers_white)
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "waiting"
-        assert "room_code" in data
+        assert data["side"] == "white"
         assert len(data["room_code"]) == 6
 
     @pytest.mark.asyncio
+    async def test_create_game_black(self, client, mock_db, auth_headers_white):
+        mock_db.read_one.return_value = FAKE_USER_WHITE
+        mock_db.execute_returning.return_value = {"id": 10, "room_code": "ABC123", "status": "waiting"}
+
+        resp = await client.post("/api/games", json={"side": "black"}, headers=auth_headers_white)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["side"] == "black"
+
+    @pytest.mark.asyncio
+    async def test_create_game_default_white(self, client, mock_db, auth_headers_white):
+        """Default side should be white."""
+        mock_db.read_one.return_value = FAKE_USER_WHITE
+        mock_db.execute_returning.return_value = {"id": 10, "room_code": "ABC123", "status": "waiting"}
+
+        resp = await client.post("/api/games", json={}, headers=auth_headers_white)
+        assert resp.status_code == 200
+        assert resp.json()["side"] == "white"
+
+    @pytest.mark.asyncio
+    async def test_create_game_invalid_side(self, client, mock_db, auth_headers_white):
+        mock_db.read_one.return_value = FAKE_USER_WHITE
+        resp = await client.post("/api/games", json={"side": "purple"}, headers=auth_headers_white)
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
     async def test_create_game_no_auth(self, client):
-        resp = await client.post("/api/games")
+        resp = await client.post("/api/games", json={"side": "white"})
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
@@ -37,56 +62,44 @@ class TestCreateGame:
         mock_db.read_one.return_value = FAKE_USER_WHITE
         mock_db.execute_returning.return_value = {"id": 42, "room_code": "ZZZ999", "status": "waiting"}
 
-        resp = await client.post("/api/games", headers=auth_headers_white)
-        data = resp.json()
-        assert data["id"] == 42
+        resp = await client.post("/api/games", json={"side": "white"}, headers=auth_headers_white)
+        assert resp.json()["id"] == 42
 
 
 class TestJoinGame:
     @pytest.mark.asyncio
     async def test_join_game_success(self, client, mock_db, auth_headers_black):
-        # Auth: read_one → user; get_game_by_room_code: read_one → game
         mock_db.read_one.side_effect = [
             FAKE_USER_BLACK,      # auth
             FAKE_GAME_WAITING,    # get_game_by_room_code
         ]
-        # join_game: execute_returning → updated game
         mock_db.execute_returning.return_value = FAKE_GAME_ACTIVE
 
         resp = await client.post("/api/games/ABC123/join", headers=auth_headers_black)
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "active"
+        assert "side" in data
         mock_db.read_one.side_effect = None
 
     @pytest.mark.asyncio
     async def test_join_nonexistent_game(self, client, mock_db, auth_headers_black):
-        mock_db.read_one.side_effect = [
-            FAKE_USER_BLACK,  # auth
-            None,             # game not found
-        ]
+        mock_db.read_one.side_effect = [FAKE_USER_BLACK, None]
         resp = await client.post("/api/games/NOPE00/join", headers=auth_headers_black)
         assert resp.status_code == 404
         mock_db.read_one.side_effect = None
 
     @pytest.mark.asyncio
     async def test_join_already_active_game(self, client, mock_db, auth_headers_black):
-        mock_db.read_one.side_effect = [
-            FAKE_USER_BLACK,   # auth
-            FAKE_GAME_ACTIVE,  # game already active
-        ]
+        mock_db.read_one.side_effect = [FAKE_USER_BLACK, FAKE_GAME_ACTIVE]
         resp = await client.post("/api/games/ABC123/join", headers=auth_headers_black)
         assert resp.status_code == 400
         assert "not waiting" in resp.json()["detail"]
         mock_db.read_one.side_effect = None
 
     @pytest.mark.asyncio
-    async def test_join_own_game(self, client, mock_db, auth_headers_white):
-        """White player (creator) tries to join their own game as black."""
-        mock_db.read_one.side_effect = [
-            FAKE_USER_WHITE,    # auth — user id=1
-            FAKE_GAME_WAITING,  # game.white_player_id=1
-        ]
+    async def test_join_own_game_white(self, client, mock_db, auth_headers_white):
+        mock_db.read_one.side_effect = [FAKE_USER_WHITE, FAKE_GAME_WAITING]
         resp = await client.post("/api/games/ABC123/join", headers=auth_headers_white)
         assert resp.status_code == 400
         assert "own game" in resp.json()["detail"].lower()
@@ -99,12 +112,7 @@ class TestJoinGame:
 
     @pytest.mark.asyncio
     async def test_join_game_db_returns_none(self, client, mock_db, auth_headers_black):
-        """join_game service returns None (race condition, already joined, etc.)."""
-        mock_db.read_one.side_effect = [
-            FAKE_USER_BLACK,    # auth
-            FAKE_GAME_WAITING,  # game found
-        ]
-        # join_game execute_returning returns None
+        mock_db.read_one.side_effect = [FAKE_USER_BLACK, FAKE_GAME_WAITING]
         mock_db.execute_returning.return_value = None
         resp = await client.post("/api/games/ABC123/join", headers=auth_headers_black)
         assert resp.status_code == 400
@@ -114,23 +122,34 @@ class TestJoinGame:
 
 class TestGetGame:
     @pytest.mark.asyncio
-    async def test_get_game_success(self, client, mock_db):
-        mock_db.read_one.return_value = FAKE_GAME_WAITING
-        resp = await client.get("/api/games/ABC123")
+    async def test_get_game_as_player(self, client, mock_db, auth_headers_white):
+        """Player in the game can view it."""
+        mock_db.read_one.side_effect = [FAKE_USER_WHITE, FAKE_GAME_WAITING]
+        resp = await client.get("/api/games/ABC123", headers=auth_headers_white)
         assert resp.status_code == 200
         data = resp.json()
         assert data["room_code"] == "ABC123"
-        assert data["status"] == "waiting"
+        mock_db.read_one.side_effect = None
 
     @pytest.mark.asyncio
-    async def test_get_game_not_found(self, client, mock_db):
-        mock_db.read_one.return_value = None
-        resp = await client.get("/api/games/NOPE00")
+    async def test_get_game_not_found(self, client, mock_db, auth_headers_white):
+        mock_db.read_one.side_effect = [FAKE_USER_WHITE, None]
+        resp = await client.get("/api/games/NOPE00", headers=auth_headers_white)
         assert resp.status_code == 404
+        mock_db.read_one.side_effect = None
 
     @pytest.mark.asyncio
-    async def test_get_game_no_auth_required(self, client, mock_db):
-        """GET game state should work without authentication."""
-        mock_db.read_one.return_value = FAKE_GAME_ACTIVE
+    async def test_get_game_blocked_for_non_player(self, client, mock_db, auth_headers_black):
+        """User not in the game should get 403."""
+        # FAKE_GAME_WAITING has white_player_id=1, black_player_id=None
+        # auth_headers_black is user id=2
+        mock_db.read_one.side_effect = [FAKE_USER_BLACK, FAKE_GAME_WAITING]
+        resp = await client.get("/api/games/ABC123", headers=auth_headers_black)
+        assert resp.status_code == 403
+        mock_db.read_one.side_effect = None
+
+    @pytest.mark.asyncio
+    async def test_get_game_requires_auth(self, client, mock_db):
+        """GET game now requires auth."""
         resp = await client.get("/api/games/ABC123")
-        assert resp.status_code == 200
+        assert resp.status_code == 401

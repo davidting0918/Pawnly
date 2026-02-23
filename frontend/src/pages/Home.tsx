@@ -5,7 +5,7 @@ import type { RootState } from '../store/store';
 import { loginSuccess, logout } from '../features/authSlice';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/axios';
-import { Swords, Users, Crown, LogOut, User, Plus, ArrowRight, Sparkles } from 'lucide-react';
+import { Users, Crown, LogOut, User, Plus, ArrowRight, Sparkles } from 'lucide-react';
 
 const Home: React.FC = () => {
   const user = useSelector((state: RootState) => state.auth.user);
@@ -13,7 +13,9 @@ const Home: React.FC = () => {
   const navigate = useNavigate();
   const [roomCode, setRoomCode] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState('');
+  const [showSidePicker, setShowSidePicker] = useState(false);
 
   const handleGoogleSuccess = async (credentialResponse: any) => {
     try {
@@ -30,11 +32,12 @@ const Home: React.FC = () => {
     }
   };
 
-  const createRoom = async () => {
+  const createRoom = async (side: 'white' | 'black') => {
     setIsCreating(true);
     setError('');
+    setShowSidePicker(false);
     try {
-      const res = await apiClient.post('/api/games');
+      const res = await apiClient.post('/api/games', { side });
       navigate(`/game/${res.data.room_code}`);
     } catch (err: any) {
       setError('Failed to create game. Please try again.');
@@ -44,9 +47,19 @@ const Home: React.FC = () => {
     }
   };
 
-  const joinRoom = () => {
-    if (roomCode.trim().length >= 4) {
-      navigate(`/game/${roomCode.trim().toUpperCase()}`);
+  const joinRoom = async () => {
+    const code = roomCode.trim().toUpperCase();
+    if (code.length < 4) return;
+    setIsJoining(true);
+    setError('');
+    try {
+      await apiClient.post(`/api/games/${code}/join`);
+      navigate(`/game/${code}`);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail || 'Failed to join game';
+      setError(detail);
+    } finally {
+      setIsJoining(false);
     }
   };
 
@@ -121,23 +134,52 @@ const Home: React.FC = () => {
             )}
 
             {/* Create Game */}
-            <div className="card-hover group" onClick={createRoom}>
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
-                  <Plus size={24} className="text-emerald-400" />
+            {!showSidePicker ? (
+              <div className="card-hover group" onClick={() => setShowSidePicker(true)}>
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
+                    <Plus size={24} className="text-emerald-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-bold text-white">New Game</h3>
+                    <p className="text-zinc-500 text-sm">Create a room and invite a friend</p>
+                  </div>
+                  <ArrowRight size={20} className="text-zinc-600 group-hover:text-emerald-400 transition-colors" />
                 </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    New Game
-                    {isCreating && (
-                      <span className="inline-block w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-                    )}
-                  </h3>
-                  <p className="text-zinc-500 text-sm">Create a room and invite a friend</p>
-                </div>
-                <ArrowRight size={20} className="text-zinc-600 group-hover:text-emerald-400 transition-colors" />
               </div>
-            </div>
+            ) : (
+              /* Side Picker */
+              <div className="card">
+                <h3 className="text-lg font-bold text-white mb-2 text-center">Pick your side</h3>
+                <p className="text-zinc-500 text-sm mb-5 text-center">Your friend will play the other side</p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => createRoom('white')}
+                    disabled={isCreating}
+                    className="flex-1 bg-zinc-100 hover:bg-white text-zinc-900 font-bold py-4 rounded-xl transition-all
+                               flex flex-col items-center gap-2 border-2 border-transparent hover:border-emerald-400 active:scale-95"
+                  >
+                    <span className="text-3xl">♔</span>
+                    <span>White</span>
+                  </button>
+                  <button
+                    onClick={() => createRoom('black')}
+                    disabled={isCreating}
+                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-4 rounded-xl transition-all
+                               flex flex-col items-center gap-2 border-2 border-transparent hover:border-emerald-400 active:scale-95"
+                  >
+                    <span className="text-3xl">♚</span>
+                    <span>Black</span>
+                  </button>
+                </div>
+                <button
+                  onClick={() => setShowSidePicker(false)}
+                  className="w-full mt-3 text-zinc-500 hover:text-zinc-300 text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
 
             {/* Join Game */}
             <div className="card">
@@ -165,9 +207,11 @@ const Home: React.FC = () => {
                 <button
                   className="btn-primary !px-8 !rounded-xl"
                   onClick={joinRoom}
-                  disabled={roomCode.trim().length < 4}
+                  disabled={roomCode.trim().length < 4 || isJoining}
                 >
-                  Join
+                  {isJoining ? (
+                    <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : 'Join'}
                 </button>
               </div>
             </div>
