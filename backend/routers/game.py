@@ -124,7 +124,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
 
     board = boards_cache[room_code]
 
-    # Send initial state
+    # Send initial state to the connecting player
     await websocket.send_json({
         "type": "init",
         "fen": board.fen(),
@@ -134,6 +134,21 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
         "your_side": player_side,
         "turn": "w" if board.turn == chess.WHITE else "b",
     })
+
+    # If game is active and both players are now connected, broadcast game_start
+    # This notifies player 1 (who was waiting) that the game is ready
+    if game["status"] == "active" and manager.get_connection_count(room_code) >= 2:
+        await manager.broadcast(
+            {
+                "type": "game_start",
+                "fen": board.fen(),
+                "status": "active",
+                "white_player_id": game["white_player_id"],
+                "black_player_id": game["black_player_id"],
+                "turn": "w" if board.turn == chess.WHITE else "b",
+            },
+            room_code,
+        )
 
     try:
         while True:
