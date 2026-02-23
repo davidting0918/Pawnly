@@ -10,13 +10,21 @@ def generate_room_code(length: int = 6) -> str:
     )
 
 
-async def create_game(user_id: int) -> Dict[str, Any]:
+async def create_game(user_id: int, side: str = "white") -> Dict[str, Any]:
+    """Create a new game. Creator picks white or black."""
     room_code = generate_room_code()
-    query = """
-        INSERT INTO games (room_code, white_player_id, status)
-        VALUES ($1, $2, 'waiting')
-        RETURNING *
-    """
+    if side == "black":
+        query = """
+            INSERT INTO games (room_code, black_player_id, status)
+            VALUES ($1, $2, 'waiting')
+            RETURNING *
+        """
+    else:
+        query = """
+            INSERT INTO games (room_code, white_player_id, status)
+            VALUES ($1, $2, 'waiting')
+            RETURNING *
+        """
     return await db_client.execute_returning(query, room_code, user_id)
 
 
@@ -33,13 +41,30 @@ async def get_game_by_id(game_id: int) -> Optional[Dict[str, Any]]:
 
 
 async def join_game(game_id: int, user_id: int) -> Optional[Dict[str, Any]]:
-    query = """
+    """Join the empty side of a waiting game. Works for either white or black vacancy."""
+    # Try filling black side first
+    query_black = """
         UPDATE games
         SET black_player_id = $1, status = 'active', updated_at = NOW()
-        WHERE id = $2 AND status = 'waiting' AND white_player_id != $1
+        WHERE id = $2 AND status = 'waiting'
+          AND black_player_id IS NULL AND white_player_id IS NOT NULL
+          AND white_player_id != $1
         RETURNING *
     """
-    return await db_client.execute_returning(query, user_id, game_id)
+    result = await db_client.execute_returning(query_black, user_id, game_id)
+    if result:
+        return result
+
+    # Try filling white side
+    query_white = """
+        UPDATE games
+        SET white_player_id = $1, status = 'active', updated_at = NOW()
+        WHERE id = $2 AND status = 'waiting'
+          AND white_player_id IS NULL AND black_player_id IS NOT NULL
+          AND black_player_id != $1
+        RETURNING *
+    """
+    return await db_client.execute_returning(query_white, user_id, game_id)
 
 
 async def update_game_state(
