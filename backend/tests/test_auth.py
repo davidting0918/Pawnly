@@ -1,6 +1,6 @@
 """Tests for authentication (JWT, token validation, Google OAuth flow)."""
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock
 from jose import jwt
 
@@ -29,9 +29,9 @@ class TestJWT:
     def test_token_expiration(self):
         token = make_token(FAKE_USER_WHITE)
         payload = jwt.decode(token, "test_secret_key_for_testing", algorithms=["HS256"])
-        exp = datetime.utcfromtimestamp(payload["exp"])
+        exp = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
         # Should expire within ~30 minutes (with some tolerance)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         assert exp > now
         assert exp < now + timedelta(minutes=35)
 
