@@ -24,61 +24,29 @@ const Game: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const ws = useRef<WebSocket | null>(null);
 
+  // Use refs for values that WS callbacks need (avoid stale closures)
+  const phaseRef = useRef<GamePhase>('loading');
+  const mySideRef = useRef<'w' | 'b' | null>(null);
+
+  const updatePhase = (p: GamePhase) => {
+    phaseRef.current = p;
+    setPhase(p);
+  };
+
+  const updateMySide = (s: 'w' | 'b') => {
+    mySideRef.current = s;
+    setMySide(s);
+  };
+
   // Step 1: Check game state and auto-join if needed
   useEffect(() => {
     if (!user || !roomCode) return;
-
-    const initGame = async () => {
-      try {
-        // Try to get game info
-        const res = await apiClient.get(`/api/games/${roomCode}`);
-        const gameData = res.data;
-
-        const isWhite = gameData.white_player_id === user.id;
-        const isBlack = gameData.black_player_id === user.id;
-
-        if (isWhite || isBlack) {
-          // Already a player
-          setMySide(isWhite ? 'w' : 'b');
-          setPhase(gameData.status === 'waiting' ? 'waiting' : 'playing');
-          connectWs();
-        } else if (gameData.status === 'waiting') {
-          // Not a player yet, try to join
-          setPhase('joining');
-          try {
-            const joinRes = await apiClient.post(`/api/games/${roomCode}/join`);
-            setMySide(joinRes.data.side === 'white' ? 'w' : 'b');
-            setPhase('playing');
-            connectWs();
-          } catch (joinErr: any) {
-            setErrorMsg(joinErr.response?.data?.detail || 'Failed to join game');
-            setPhase('blocked');
-          }
-        } else {
-          // Game is active/finished and user is not a player
-          setPhase('blocked');
-          setErrorMsg('You are not a player in this game');
-        }
-      } catch (err: any) {
-        if (err.response?.status === 403) {
-          setPhase('blocked');
-          setErrorMsg('You are not a player in this game');
-        } else if (err.response?.status === 404) {
-          setPhase('blocked');
-          setErrorMsg('Game not found');
-        } else {
-          setPhase('blocked');
-          setErrorMsg('Failed to load game');
-        }
-      }
-    };
 
     const connectWs = () => {
       const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
       const socket = new WebSocket(`${wsUrl}/api/ws/game/${roomCode}`);
 
       socket.onopen = () => {
-        // Send auth message first
         socket.send(JSON.stringify({ type: 'auth', user_id: user.id }));
         setIsConnected(true);
       };
@@ -88,33 +56,37 @@ const Game: React.FC = () => {
 
         if (data.type === 'init') {
           setGame(new Chess(data.fen));
-          setMySide(data.your_side);
-          if (data.status === 'waiting') {
-            setPhase('waiting');
+          updateMySide(data.your_side);
+          if (data.status === 'active') {
+            updatePhase('playing');
           } else {
-            setPhase('playing');
+            updatePhase('waiting');
           }
+        } else if (data.type === 'game_start') {
+          // Opponent connected — game is now active!
+          setGame(new Chess(data.fen));
+          updatePhase('playing');
         } else if (data.type === 'update') {
           setGame(new Chess(data.fen));
-          if (data.status === 'active' && phase === 'waiting') {
-            setPhase('playing');
+          if (phaseRef.current === 'waiting') {
+            updatePhase('playing');
           }
           if (data.game_over) {
-            setPhase('finished');
+            updatePhase('finished');
             setWinnerId(data.winner_id ?? null);
             if (data.checkmate) setGameOverReason('Checkmate');
             else if (data.stalemate) setGameOverReason('Stalemate');
             else setGameOverReason('Draw');
           }
         } else if (data.type === 'game_over') {
-          setPhase('finished');
+          updatePhase('finished');
           setWinnerId(data.winner_id ?? null);
           setGameOverReason(data.reason === 'resign' ? 'Resignation' : 'Game Over');
           if (data.fen) setGame(new Chess(data.fen));
         } else if (data.type === 'error') {
           console.error('Server:', data.message);
           if (data.message.includes('not a player')) {
-            setPhase('blocked');
+            updatePhase('blocked');
             setErrorMsg(data.message);
           }
         }
@@ -122,6 +94,47 @@ const Game: React.FC = () => {
 
       socket.onclose = () => setIsConnected(false);
       ws.current = socket;
+    };
+
+    const initGame = async () => {
+      try {
+        const res = await apiClient.get(`/api/games/${roomCode}`);
+        const gameData = res.data;
+
+        const isWhite = gameData.white_player_id === user.id;
+        const isBlack = gameData.black_player_id === user.id;
+
+        if (isWhite || isBlack) {
+          updateMySide(isWhite ? 'w' : 'b');
+          updatePhase(gameData.status === 'waiting' ? 'waiting' : 'playing');
+          connectWs();
+        } else if (gameData.status === 'waiting') {
+          updatePhase('joining');
+          try {
+            const joinRes = await apiClient.post(`/api/games/${roomCode}/join`);
+            updateMySide(joinRes.data.side === 'white' ? 'w' : 'b');
+            updatePhase('playing');
+            connectWs();
+          } catch (joinErr: any) {
+            setErrorMsg(joinErr.response?.data?.detail || 'Failed to join game');
+            updatePhase('blocked');
+          }
+        } else {
+          updatePhase('blocked');
+          setErrorMsg('You are not a player in this game');
+        }
+      } catch (err: any) {
+        if (err.response?.status === 403) {
+          updatePhase('blocked');
+          setErrorMsg('You are not a player in this game');
+        } else if (err.response?.status === 404) {
+          updatePhase('blocked');
+          setErrorMsg('Game not found');
+        } else {
+          updatePhase('blocked');
+          setErrorMsg('Failed to load game');
+        }
+      }
     };
 
     initGame();
@@ -132,12 +145,12 @@ const Game: React.FC = () => {
   }, [roomCode, user]);
 
   const onDrop = useCallback((sourceSquare: string, targetSquare: string) => {
-    if (phase !== 'playing') return false;
+    if (phaseRef.current !== 'playing') return false;
     if (!ws.current || ws.current.readyState !== WebSocket.OPEN) return false;
 
     // Check if it's my turn
     const currentTurn = game.turn();
-    if (mySide !== currentTurn) return false;
+    if (mySideRef.current !== currentTurn) return false;
 
     // Optimistic local validation
     try {
@@ -150,7 +163,7 @@ const Game: React.FC = () => {
 
     ws.current.send(JSON.stringify({ type: 'move', from: sourceSquare, to: targetSquare }));
     return true;
-  }, [game, phase, mySide]);
+  }, [game]);
 
   const handleResign = () => {
     if (!ws.current || !user) return;
@@ -194,6 +207,7 @@ const Game: React.FC = () => {
   const moves = game.history();
   const turn = game.turn() === 'w' ? 'White' : 'Black';
   const isMyTurn = mySide === game.turn();
+  const boardOrientation = mySide === 'b' ? 'black' : 'white';
 
   const resultText = (() => {
     if (phase !== 'finished') return null;
@@ -219,7 +233,10 @@ const Game: React.FC = () => {
           {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} className="text-zinc-500" />}
         </button>
 
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-zinc-500 font-medium">
+            {mySide === 'w' ? '♔ White' : '♚ Black'}
+          </span>
           {isConnected ? (
             <span className="flex items-center gap-1.5 text-emerald-400">
               <span className="relative flex h-2 w-2">
@@ -253,10 +270,11 @@ const Game: React.FC = () => {
             <Chessboard
               position={game.fen()}
               onPieceDrop={onDrop}
-              boardOrientation={mySide === 'b' ? 'black' : 'white'}
+              boardOrientation={boardOrientation}
               customDarkSquareStyle={{ backgroundColor: '#779952' }}
               customLightSquareStyle={{ backgroundColor: '#e9edcc' }}
               animationDuration={200}
+              arePiecesDraggable={phase === 'playing' && isMyTurn}
             />
           </div>
         </div>
@@ -279,14 +297,24 @@ const Game: React.FC = () => {
             ) : (
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className={`w-4 h-4 rounded-full border-2 ${game.turn() === 'w' ? 'bg-white border-zinc-400' : 'bg-zinc-900 border-zinc-600'}`} />
+                  <div className={`w-4 h-4 rounded-full border-2 ${
+                    isMyTurn
+                      ? 'bg-emerald-400 border-emerald-500 animate-pulse'
+                      : game.turn() === 'w'
+                      ? 'bg-white border-zinc-400'
+                      : 'bg-zinc-900 border-zinc-600'
+                  }`} />
                   <div>
                     <p className="text-white font-semibold">
-                      {isMyTurn ? 'Your turn' : `${turn}'s turn`}
+                      {phase === 'waiting'
+                        ? 'Waiting for opponent'
+                        : isMyTurn
+                        ? '🟢 Your turn!'
+                        : `${turn}'s turn`}
                     </p>
                     <p className="text-zinc-500 text-xs">
                       {phase === 'waiting'
-                        ? 'Waiting for opponent…'
+                        ? 'Share the room code'
                         : game.isCheck()
                         ? '🔴 Check!'
                         : `You play ${mySide === 'w' ? 'White ♔' : 'Black ♚'}`}
