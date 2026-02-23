@@ -144,15 +144,14 @@ const Game: React.FC = () => {
     };
   }, [roomCode, user]);
 
-  const onDrop = useCallback((sourceSquare: string, targetSquare: string) => {
+  const onDrop = useCallback(({ sourceSquare, targetSquare }: { sourceSquare: string; targetSquare: string | null }) => {
+    if (!targetSquare) return false;
     if (phaseRef.current !== 'playing') return false;
     if (!ws.current || ws.current.readyState !== WebSocket.OPEN) return false;
 
-    // Check if it's my turn
     const currentTurn = game.turn();
     if (mySideRef.current !== currentTurn) return false;
 
-    // Optimistic local validation
     try {
       const temp = new Chess(game.fen());
       const move = temp.move({ from: sourceSquare, to: targetSquare, promotion: 'q' });
@@ -268,13 +267,15 @@ const Game: React.FC = () => {
         <div className="w-full max-w-[min(600px,85vw)] aspect-square">
           <div className="rounded-2xl overflow-hidden shadow-2xl shadow-black/50 border border-zinc-800">
             <Chessboard
-              position={game.fen()}
-              onPieceDrop={onDrop}
-              boardOrientation={boardOrientation}
-              customDarkSquareStyle={{ backgroundColor: '#779952' }}
-              customLightSquareStyle={{ backgroundColor: '#e9edcc' }}
-              animationDuration={200}
-              arePiecesDraggable={phase === 'playing' && isMyTurn}
+              options={{
+                position: game.fen(),
+                onPieceDrop: onDrop,
+                boardOrientation,
+                darkSquareStyle: { backgroundColor: '#779952' },
+                lightSquareStyle: { backgroundColor: '#e9edcc' },
+                animationDurationInMs: 200,
+                allowDragging: phase === 'playing' && isMyTurn,
+              }}
             />
           </div>
         </div>
