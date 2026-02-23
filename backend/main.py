@@ -9,14 +9,30 @@ load_dotenv()
 
 from core.database import db_client
 from routers import auth, game, users
+from services import game_service
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     await db_client.init_pool()
+    # Detect or create time_per_move column
+    try:
+        row = await db_client.read_one(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='games' AND column_name='time_per_move'"
+        )
+        if row:
+            game_service.set_time_column_available(True)
+        else:
+            async with db_client.get_connection() as conn:
+                await conn.execute(
+                    "ALTER TABLE games ADD COLUMN IF NOT EXISTS time_per_move INTEGER DEFAULT NULL"
+                )
+            game_service.set_time_column_available(True)
+    except Exception as e:
+        print(f"Migration note (time_per_move): {e} — timer feature will be disabled")
+        game_service.set_time_column_available(False)
     yield
-    # Shutdown
     await db_client.close()
 
 

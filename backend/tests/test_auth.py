@@ -78,7 +78,7 @@ class TestProtectedAccess:
     async def test_valid_token_with_existing_user_passes(self, client, mock_db):
         """Valid token + user in DB should pass auth."""
         mock_db.read_one.return_value = FAKE_USER_WHITE
-        mock_db.execute_returning.return_value = {"id": 10, "room_code": "XYZ789", "status": "waiting"}
+        mock_db.execute_returning.return_value = {"id": 10, "room_code": "XYZ789", "status": "waiting", "time_per_move": None}
         resp = await client.post(
             "/api/games",
             json={"side": "white"},

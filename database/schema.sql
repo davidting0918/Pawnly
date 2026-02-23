@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS games (
     pgn TEXT DEFAULT '',
     status VARCHAR(20) DEFAULT 'waiting', -- waiting, active, finished, aborted
     winner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    time_per_move INTEGER DEFAULT NULL, -- seconds per move; NULL means no limit
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

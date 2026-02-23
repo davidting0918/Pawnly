@@ -5,7 +5,16 @@ import type { RootState } from '../store/store';
 import { loginSuccess, logout } from '../features/authSlice';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/axios';
-import { Users, Crown, LogOut, User, Plus, ArrowRight, Sparkles } from 'lucide-react';
+import { Users, Crown, LogOut, User, Plus, ArrowRight, Sparkles, Clock, Timer } from 'lucide-react';
+
+const TIME_OPTIONS = [
+  { label: 'No limit', value: null },
+  { label: '15s', value: 15 },
+  { label: '30s', value: 30 },
+  { label: '1 min', value: 60 },
+  { label: '2 min', value: 120 },
+  { label: '5 min', value: 300 },
+] as const;
 
 const Home: React.FC = () => {
   const user = useSelector((state: RootState) => state.auth.user);
@@ -15,7 +24,9 @@ const Home: React.FC = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState('');
-  const [showSidePicker, setShowSidePicker] = useState(false);
+  const [showCreatePanel, setShowCreatePanel] = useState(false);
+  const [selectedSide, setSelectedSide] = useState<'white' | 'black'>('white');
+  const [selectedTime, setSelectedTime] = useState<number | null>(null);
 
   const handleGoogleSuccess = async (credentialResponse: any) => {
     try {
@@ -32,12 +43,14 @@ const Home: React.FC = () => {
     }
   };
 
-  const createRoom = async (side: 'white' | 'black') => {
+  const createRoom = async () => {
     setIsCreating(true);
     setError('');
-    setShowSidePicker(false);
     try {
-      const res = await apiClient.post('/api/games', { side });
+      const res = await apiClient.post('/api/games', {
+        side: selectedSide,
+        time_per_move: selectedTime,
+      });
       navigate(`/game/${res.data.room_code}`);
     } catch (err: any) {
       setError('Failed to create game. Please try again.');
@@ -107,7 +120,6 @@ const Home: React.FC = () => {
         </div>
 
         {!user ? (
-          /* ── Login Card ── */
           <div className="card max-w-sm w-full text-center">
             <div className="w-16 h-16 bg-zinc-800 rounded-2xl flex items-center justify-center mx-auto mb-6">
               <Crown size={32} className="text-emerald-400" />
@@ -125,7 +137,6 @@ const Home: React.FC = () => {
             </div>
           </div>
         ) : (
-          /* ── Game Actions ── */
           <div className="w-full max-w-lg space-y-4">
             {error && (
               <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-3 rounded-xl text-center">
@@ -134,8 +145,8 @@ const Home: React.FC = () => {
             )}
 
             {/* Create Game */}
-            {!showSidePicker ? (
-              <div className="card-hover group" onClick={() => setShowSidePicker(true)}>
+            {!showCreatePanel ? (
+              <div className="card-hover group" onClick={() => setShowCreatePanel(true)}>
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
                     <Plus size={24} className="text-emerald-400" />
@@ -148,33 +159,78 @@ const Home: React.FC = () => {
                 </div>
               </div>
             ) : (
-              /* Side Picker */
-              <div className="card">
-                <h3 className="text-lg font-bold text-white mb-2 text-center">Pick your side</h3>
-                <p className="text-zinc-500 text-sm mb-5 text-center">Your friend will play the other side</p>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => createRoom('white')}
-                    disabled={isCreating}
-                    className="flex-1 bg-zinc-100 hover:bg-white text-zinc-900 font-bold py-4 rounded-xl transition-all
-                               flex flex-col items-center gap-2 border-2 border-transparent hover:border-emerald-400 active:scale-95"
-                  >
-                    <span className="text-3xl">♔</span>
-                    <span>White</span>
-                  </button>
-                  <button
-                    onClick={() => createRoom('black')}
-                    disabled={isCreating}
-                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-4 rounded-xl transition-all
-                               flex flex-col items-center gap-2 border-2 border-transparent hover:border-emerald-400 active:scale-95"
-                  >
-                    <span className="text-3xl">♚</span>
-                    <span>Black</span>
-                  </button>
+              <div className="card space-y-5">
+                {/* Side Picker */}
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Crown size={14} /> Pick your side
+                  </h3>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setSelectedSide('white')}
+                      className={`flex-1 font-bold py-3 rounded-xl transition-all flex flex-col items-center gap-1.5 border-2 active:scale-95 ${
+                        selectedSide === 'white'
+                          ? 'bg-white text-zinc-900 border-emerald-400 shadow-lg shadow-emerald-500/20'
+                          : 'bg-zinc-100 hover:bg-white text-zinc-700 border-transparent'
+                      }`}
+                    >
+                      <span className="text-2xl">♔</span>
+                      <span className="text-sm">White</span>
+                    </button>
+                    <button
+                      onClick={() => setSelectedSide('black')}
+                      className={`flex-1 font-bold py-3 rounded-xl transition-all flex flex-col items-center gap-1.5 border-2 active:scale-95 ${
+                        selectedSide === 'black'
+                          ? 'bg-zinc-700 text-white border-emerald-400 shadow-lg shadow-emerald-500/20'
+                          : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-transparent'
+                      }`}
+                    >
+                      <span className="text-2xl">♚</span>
+                      <span className="text-sm">Black</span>
+                    </button>
+                  </div>
                 </div>
+
+                {/* Time Picker */}
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Timer size={14} /> Time per move
+                  </h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    {TIME_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.label}
+                        onClick={() => setSelectedTime(opt.value)}
+                        className={`py-2.5 px-3 rounded-xl text-sm font-semibold transition-all border-2 active:scale-95 ${
+                          selectedTime === opt.value
+                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
+                            : 'bg-zinc-800/80 text-zinc-400 border-zinc-700/50 hover:border-zinc-600 hover:text-zinc-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Create Button */}
                 <button
-                  onClick={() => setShowSidePicker(false)}
-                  className="w-full mt-3 text-zinc-500 hover:text-zinc-300 text-sm transition-colors"
+                  onClick={createRoom}
+                  disabled={isCreating}
+                  className="btn-primary w-full flex items-center justify-center gap-2 !py-3.5 text-base"
+                >
+                  {isCreating ? (
+                    <span className="inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Plus size={18} /> Create Game
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setShowCreatePanel(false)}
+                  className="w-full text-zinc-500 hover:text-zinc-300 text-sm transition-colors"
                 >
                   Cancel
                 </button>
@@ -233,7 +289,6 @@ const Home: React.FC = () => {
         )}
       </main>
 
-      {/* Footer */}
       <footer className="text-center text-zinc-700 text-xs py-6 border-t border-zinc-800/30">
         Built with ♟️ — Pawnly
       </footer>
