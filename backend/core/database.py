@@ -13,7 +13,8 @@ class PostgresAsyncClient:
     def __init__(self):
         self.connection_string = os.getenv("DATABASE_URL")
         if not self.connection_string:
-            raise ValueError("DATABASE_URL environment variable not set.")
+            # Fallback or error - better to fail early
+            print("Warning: DATABASE_URL not set.")
         self._pool: Optional[Pool] = None
 
     @classmethod
@@ -23,11 +24,15 @@ class PostgresAsyncClient:
         return cls._instance
 
     async def init_pool(self):
-        if not self._pool:
+        if not self._pool and self.connection_string:
+            # Handle sslmode query param manually if needed, or let asyncpg handle it if formatted correctly
+            # asyncpg prefers dsns without unknown query params.
+            # Clean DSN if it contains ?sslmode=require which might confuse simple parsers
+            # But asyncpg usually handles standard DSNs well.
             self._pool = await asyncpg.create_pool(
                 self.connection_string,
                 min_size=1,
-                max_size=10
+                max_size=20
             )
 
     async def close(self):
@@ -39,6 +44,8 @@ class PostgresAsyncClient:
     async def get_connection(self):
         if not self._pool:
             await self.init_pool()
+        if not self._pool:
+             raise RuntimeError("Database pool not initialized")
         async with self._pool.acquire() as connection:
             yield connection
 
@@ -55,10 +62,11 @@ class PostgresAsyncClient:
     async def execute(self, query: str, *args: Any) -> str:
         async with self.get_connection() as conn:
             return await conn.execute(query, *args)
+            
+    async def execute_returning(self, query: str, *args: Any) -> Optional[Dict[str, Any]]:
+        async with self.get_connection() as conn:
+            row = await conn.fetchrow(query, *args)
+            return dict(row) if row else None
 
-# Singleton instance
+# Singleton
 db_client = PostgresAsyncClient.get_instance()
-
-async def get_db_conn():
-    async with db_client.get_connection() as conn:
-        yield conn
