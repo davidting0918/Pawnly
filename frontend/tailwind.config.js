@@ -7,15 +7,22 @@ export default {
   theme: {
     extend: {
       colors: {
-        'pawnly-dark': '#262522',     // Pawnly Dark BG
-        'pawnly-board': '#302E2B',      // Pawnly Light BG
-        'pawnly-green': '#81B64C',      // Chessboard Green
-        'pawnly-light': '#E9EDCC',     // Chessboard Light
+        'pawnly': {
+          'bg':      '#1a1a1d',
+          'surface': '#27272a',
+          'card':    '#18181b',
+          'border':  '#3f3f46',
+          'green':   '#34d399',
+          'accent':  '#10b981',
+        },
+        'board': {
+          'dark':  '#779952',
+          'light': '#e9edcc',
+        },
       },
-      boxShadow: {
-        '3d': '0 4px 8px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1)',
-        '3d-hover': '0 6px 12px rgba(0, 0, 0, 0.2), 0 3px 6px rgba(0, 0, 0, 0.15)',
-        '3d-pressed': 'inset 0 2px 4px rgba(0, 0, 0, 0.2)',
+      fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
       },
     },
   },

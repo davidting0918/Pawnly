@@ -1,70 +1,136 @@
-// Writing Profile.tsx
 import React, { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../store/store';
+import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/axios';
-import { User, ShieldCheck, Calendar, BarChart3, Swords } from 'lucide-react';
+import { User, Crown, ArrowLeft, Swords, Trophy, TrendingUp } from 'lucide-react';
 import { format } from 'date-fns';
 
-interface Game {
+interface GameRecord {
   id: number;
   status: string;
   winner_id: number | null;
   created_at: string;
-  white_player: { username: string };
-  black_player: { username: string };
+  white_player: { id: number; username: string; elo_rating: number } | null;
+  black_player: { id: number; username: string; elo_rating: number } | null;
 }
 
 const Profile: React.FC = () => {
-  const currentUser = useSelector((state: RootState) => state.auth.user);
-  const [games, setGames] = useState<Game[]>([]);
+  const user = useSelector((state: RootState) => state.auth.user);
+  const navigate = useNavigate();
+  const [games, setGames] = useState<GameRecord[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (currentUser) {
-      apiClient.get(`/api/users/${currentUser.id}/games`)
-        .then(response => setGames(response.data))
-        .catch(console.error);
+    if (user) {
+      apiClient.get(`/api/users/${user.id}/games`)
+        .then(res => setGames(res.data))
+        .catch(console.error)
+        .finally(() => setLoading(false));
     }
-  }, [currentUser]);
+  }, [user]);
 
-  if (!currentUser) return <div>Loading...</div>;
+  if (!user) {
+    navigate('/');
+    return null;
+  }
+
+  const wins = games.filter(g => g.winner_id === user.id).length;
+  const losses = games.filter(g => g.winner_id && g.winner_id !== user.id).length;
+  const draws = games.filter(g => g.status === 'finished' && !g.winner_id).length;
 
   return (
-    <div className="min-h-screen bg-pawnly-dark text-white p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center gap-6 mb-12">
-          <div className="w-24 h-24 bg-pawnly-board rounded-full flex items-center justify-center border-4 border-gray-700">
-            <User size={48} />
-          </div>
-          <div>
-            <h1 className="text-4xl font-bold">{currentUser.username}</h1>
-            <div className="flex items-center gap-4 text-gray-400 mt-2">
-              <span className="flex items-center gap-2"><ShieldCheck size={16} /> ELO: 1200</span>
+    <div className="min-h-screen gradient-bg flex flex-col">
+      {/* Nav */}
+      <nav className="w-full px-6 py-4 flex items-center justify-between border-b border-zinc-800/50">
+        <button onClick={() => navigate('/')} className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors text-sm">
+          <ArrowLeft size={16} /> Back
+        </button>
+        <span className="text-xl font-bold text-white flex items-center gap-2">
+          <span className="text-lg">♟️</span> Pawnly
+        </span>
+        <div className="w-16" />
+      </nav>
+
+      <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-8">
+        {/* Profile Header */}
+        <div className="card mb-6">
+          <div className="flex items-center gap-5">
+            <div className="w-20 h-20 bg-zinc-800 rounded-2xl flex items-center justify-center border border-zinc-700">
+              <User size={36} className="text-zinc-500" />
+            </div>
+            <div className="flex-1">
+              <h1 className="text-2xl font-bold text-white">{user.username.split('@')[0]}</h1>
+              <p className="text-zinc-500 text-sm">{user.username}</p>
             </div>
           </div>
         </div>
-        <h2 className="text-2xl font-bold mb-6 flex items-center gap-3"><BarChart3 /> Recent Games</h2>
-        <div className="bg-pawnly-board rounded-lg border border-gray-700">
-          <ul className="divide-y divide-gray-700">
-            {games.map(game => (
-              <li key={game.id} className="p-4 flex justify-between items-center">
-                <div className="flex items-center gap-4">
-                  <Swords className={game.winner_id === currentUser.id ? 'text-pawnly-green' : 'text-red-500'} />
-                  <div>
-                    <p className="font-bold">
-                      vs {game.white_player?.username === currentUser.username ? game.black_player?.username : game.white_player?.username}
-                    </p>
-                    <p className={`text-sm ${game.winner_id === currentUser.id ? 'text-green-400' : 'text-red-400'}`}>
-                      {game.winner_id === currentUser.id ? 'Win' : 'Loss'}
-                    </p>
-                  </div>
-                </div>
-                <span className="text-gray-400 text-sm">{format(new Date(game.created_at), 'yyyy-MM-dd')}</span>
-              </li>
-            ))}
-          </ul>
+
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="card text-center">
+            <Trophy size={20} className="text-emerald-400 mx-auto mb-2" />
+            <p className="text-2xl font-bold text-white">{wins}</p>
+            <p className="text-zinc-500 text-xs">Wins</p>
+          </div>
+          <div className="card text-center">
+            <Swords size={20} className="text-red-400 mx-auto mb-2" />
+            <p className="text-2xl font-bold text-white">{losses}</p>
+            <p className="text-zinc-500 text-xs">Losses</p>
+          </div>
+          <div className="card text-center">
+            <TrendingUp size={20} className="text-blue-400 mx-auto mb-2" />
+            <p className="text-2xl font-bold text-white">{draws}</p>
+            <p className="text-zinc-500 text-xs">Draws</p>
+          </div>
         </div>
-      </div>
+
+        {/* Game History */}
+        <div className="card">
+          <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <Crown size={14} /> Recent Games
+          </h2>
+
+          {loading ? (
+            <div className="text-center py-8">
+              <span className="inline-block w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : games.length === 0 ? (
+            <div className="text-center py-8 text-zinc-600">
+              <Swords size={32} className="mx-auto mb-3 opacity-40" />
+              <p>No games played yet</p>
+              <button onClick={() => navigate('/')} className="btn-primary mt-4 !py-2 !px-4 text-sm">
+                Play your first game
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {games.map(g => {
+                const isWin = g.winner_id === user.id;
+                const isDraw = g.status === 'finished' && !g.winner_id;
+                const opponent = g.white_player?.id === user.id
+                  ? g.black_player?.username
+                  : g.white_player?.username;
+
+                return (
+                  <div key={g.id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/40 hover:bg-zinc-800/70 transition-colors">
+                    <div className={`w-2 h-8 rounded-full ${isWin ? 'bg-emerald-400' : isDraw ? 'bg-zinc-500' : 'bg-red-400'}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-medium text-sm truncate">
+                        vs {opponent ? opponent.split('@')[0] : '—'}
+                      </p>
+                      <p className={`text-xs ${isWin ? 'text-emerald-400' : isDraw ? 'text-zinc-500' : 'text-red-400'}`}>
+                        {isWin ? 'Win' : isDraw ? 'Draw' : 'Loss'}
+                      </p>
+                    </div>
+                    <span className="text-zinc-600 text-xs">{format(new Date(g.created_at), 'MMM d')}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </main>
     </div>
   );
 };
