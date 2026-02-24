@@ -8,4 +8,4 @@ class UserPublic(BaseModel):
     username: str
     elo_rating: int
     bot_elo: Optional[int] = None
-    created_at: datetime
+    created_at: Optional[datetime] = None

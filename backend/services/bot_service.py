@@ -50,23 +50,20 @@ async def get_bot_move(board: chess.Board, difficulty: str) -> chess.Move:
     config = get_difficulty_config(difficulty)
     engine = await ChessEngine.get()
 
-    # Configure skill level
-    await engine.configure({"Skill Level": config["skill"]})
+    def _think():
+        engine.configure({"Skill Level": config["skill"]})
+        return engine.play(
+            board,
+            chess.engine.Limit(
+                time=config["time"],
+                depth=config["depth"],
+            ),
+        )
 
-    # Run engine analysis with time + depth limit
-    # Use asyncio to add a minimum "thinking" delay
-    move_task = engine.play(
-        board,
-        chess.engine.Limit(
-            time=config["time"],
-            depth=config["depth"],
-        ),
+    result, _ = await asyncio.gather(
+        asyncio.to_thread(_think),
+        asyncio.sleep(MIN_THINK_DELAY),
     )
-
-    # Ensure at least MIN_THINK_DELAY seconds pass
-    delay_task = asyncio.sleep(MIN_THINK_DELAY)
-    results = await asyncio.gather(move_task, delay_task)
-    result = results[0]
 
     if result.move is None:
         raise RuntimeError("Stockfish returned no move")

@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -6,6 +7,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
+
+logger = logging.getLogger("uvicorn.error")
 
 from core.database import db_client
 from core.engine import ChessEngine
@@ -31,17 +34,17 @@ async def lifespan(app: FastAPI):
                 )
             game_service.set_time_column_available(True)
     except Exception as e:
-        print(f"Migration note (time_per_move): {e} — timer feature will be disabled")
+        logger.warning("Migration note (time_per_move): %s — timer feature will be disabled", e)
         game_service.set_time_column_available(False)
     # Start Stockfish engine if available
     if ChessEngine.is_available():
         try:
             await ChessEngine.get()
-            print("Stockfish engine initialized")
+            logger.info("Stockfish engine initialized")
         except Exception as e:
-            print(f"Stockfish init failed: {e} — bot games will be unavailable")
+            logger.warning("Stockfish init failed: %s — bot games will be unavailable", e)
     else:
-        print("Stockfish binary not found — bot games will be unavailable")
+        logger.info("Stockfish binary not found — bot games will be unavailable")
     yield
     await ChessEngine.shutdown()
     await db_client.close()
