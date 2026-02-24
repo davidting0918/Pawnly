@@ -281,7 +281,10 @@ const Home: React.FC = () => {
                 <User size={14} /> Profile
               </button>
               <span className="text-zinc-800">•</span>
-              <button className="text-zinc-500 hover:text-white transition-colors flex items-center gap-1.5">
+              <button
+                onClick={() => navigate('/leaderboard')}
+                className="text-zinc-500 hover:text-white transition-colors flex items-center gap-1.5"
+              >
                 <Crown size={14} /> Leaderboard
               </button>
             </div>

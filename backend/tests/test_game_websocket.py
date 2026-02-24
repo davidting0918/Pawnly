@@ -16,8 +16,8 @@ from starlette.testclient import TestClient
 from main import app
 
 USER_MAP = {
-    1: {"id": 1, "username": "alice@example.com"},
-    2: {"id": 2, "username": "bob@example.com"},
+    1: {"id": 1, "username": "alice@example.com", "elo_rating": 1200},
+    2: {"id": 2, "username": "bob@example.com", "elo_rating": 1300},
 }
 
 

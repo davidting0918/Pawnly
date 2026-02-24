@@ -4,6 +4,59 @@ from datetime import datetime
 
 from tests.conftest import FAKE_USER_WHITE, FAKE_USER_BLACK, FAKE_GAME_WAITING, FAKE_GAME_ACTIVE
 
+from services.game_service import calculate_elo
+
+
+class TestEloCalculation:
+    """Pure-function tests for Elo rating calculation."""
+
+    def test_elo_win_higher_rated(self):
+        """Lower-rated (1000) beats higher-rated (1400) → bigger gain."""
+        new_w, new_b = calculate_elo(1000, 1400, "white")
+        gain = new_w - 1000
+        # Lower-rated beating higher-rated should yield a large gain (> 20)
+        assert gain > 20
+        assert new_b < 1400
+
+    def test_elo_win_lower_rated(self):
+        """Higher-rated (1400) beats lower-rated (1000) → smaller gain."""
+        new_w, new_b = calculate_elo(1400, 1000, "white")
+        gain = new_w - 1400
+        # Higher-rated beating lower-rated should yield a small gain (< 12)
+        assert 0 < gain < 12
+        assert new_b < 1000
+
+    def test_elo_draw_equal(self):
+        """Draw between equal-rated players → no change."""
+        new_w, new_b = calculate_elo(1200, 1200, "draw")
+        assert new_w == 1200
+        assert new_b == 1200
+
+    def test_elo_symmetric(self):
+        """Winner's gain + loser's loss should sum to zero (zero-sum)."""
+        for w_elo, b_elo, result in [
+            (1200, 1200, "white"),
+            (1500, 1200, "black"),
+            (1000, 1400, "white"),
+            (1300, 1300, "draw"),
+        ]:
+            new_w, new_b = calculate_elo(w_elo, b_elo, result)
+            delta_w = new_w - w_elo
+            delta_b = new_b - b_elo
+            # Due to rounding the sum may differ by at most 1
+            assert abs(delta_w + delta_b) <= 1
+
+    def test_elo_black_wins(self):
+        """Black winning should increase black's rating."""
+        new_w, new_b = calculate_elo(1200, 1200, "black")
+        assert new_b > 1200
+        assert new_w < 1200
+
+    def test_elo_k_factor(self):
+        """Equal players: winner gains exactly K/2 = 16."""
+        new_w, _ = calculate_elo(1200, 1200, "white")
+        assert new_w - 1200 == 16
+
 
 class TestGameServiceRoomCode:
     def test_room_code_length(self):
