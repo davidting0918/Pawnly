@@ -19,23 +19,6 @@ from services import game_service
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db_client.init_pool()
-    # Detect or create time_per_move column
-    try:
-        row = await db_client.read_one(
-            "SELECT 1 FROM information_schema.columns "
-            "WHERE table_name='games' AND column_name='time_per_move'"
-        )
-        if row:
-            game_service.set_time_column_available(True)
-        else:
-            async with db_client.get_connection() as conn:
-                await conn.execute(
-                    "ALTER TABLE games ADD COLUMN IF NOT EXISTS time_per_move INTEGER DEFAULT NULL"
-                )
-            game_service.set_time_column_available(True)
-    except Exception as e:
-        logger.warning("Migration note (time_per_move): %s — timer feature will be disabled", e)
-        game_service.set_time_column_available(False)
     # Start Stockfish engine if available
     if ChessEngine.is_available():
         try:
