@@ -5,7 +5,7 @@ import type { RootState } from '../store/store';
 import { loginSuccess, logout } from '../features/authSlice';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/axios';
-import { Users, Crown, LogOut, User, Plus, ArrowRight, Sparkles, Timer } from 'lucide-react';
+import { Users, Crown, LogOut, User, Plus, ArrowRight, Sparkles, Timer, Bot } from 'lucide-react';
 
 const TIME_OPTIONS = [
   { label: 'No limit', value: null },
@@ -14,6 +14,14 @@ const TIME_OPTIONS = [
   { label: '1 min', value: 60 },
   { label: '2 min', value: 120 },
   { label: '5 min', value: 300 },
+] as const;
+
+const DIFFICULTY_OPTIONS = [
+  { value: 'beginner', label: 'Beginner', emoji: '🟢', elo: '~800' },
+  { value: 'easy', label: 'Easy', emoji: '🟡', elo: '~1100' },
+  { value: 'medium', label: 'Medium', emoji: '🟠', elo: '~1500' },
+  { value: 'hard', label: 'Hard', emoji: '🔴', elo: '~2000' },
+  { value: 'expert', label: 'Expert', emoji: '💀', elo: '~2500' },
 ] as const;
 
 const Home: React.FC = () => {
@@ -25,8 +33,13 @@ const Home: React.FC = () => {
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState('');
   const [showCreatePanel, setShowCreatePanel] = useState(false);
+  const [showBotPanel, setShowBotPanel] = useState(false);
   const [selectedSide, setSelectedSide] = useState<'white' | 'black'>('white');
   const [selectedTime, setSelectedTime] = useState<number | null>(null);
+  const [selectedDifficulty, setSelectedDifficulty] = useState<string>('medium');
+  const [botSide, setBotSide] = useState<'white' | 'black'>('white');
+  const [botTime, setBotTime] = useState<number | null>(null);
+  const [isCreatingBot, setIsCreatingBot] = useState(false);
 
   const handleGoogleSuccess = async (credentialResponse: any) => {
     try {
@@ -73,6 +86,24 @@ const Home: React.FC = () => {
       setError(detail);
     } finally {
       setIsJoining(false);
+    }
+  };
+
+  const createBotGame = async () => {
+    setIsCreatingBot(true);
+    setError('');
+    try {
+      const res = await apiClient.post('/api/games/bot', {
+        side: botSide,
+        difficulty: selectedDifficulty,
+        time_per_move: botTime,
+      });
+      navigate(`/game/${res.data.room_code}`);
+    } catch (err: any) {
+      setError('Failed to create bot game. Please try again.');
+      console.error('Failed to create bot game', err);
+    } finally {
+      setIsCreatingBot(false);
     }
   };
 
@@ -144,9 +175,125 @@ const Home: React.FC = () => {
               </div>
             )}
 
-            {/* Create Game */}
+            {/* Play vs Bot */}
+            {!showBotPanel ? (
+              <div className="card-hover group" onClick={() => { setShowBotPanel(true); setShowCreatePanel(false); }}>
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-orange-500/10 border border-orange-500/20 rounded-xl flex items-center justify-center group-hover:bg-orange-500/20 transition-colors">
+                    <Bot size={24} className="text-orange-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-bold text-white">Play vs Bot</h3>
+                    <p className="text-zinc-500 text-sm">Practice against Stockfish AI</p>
+                  </div>
+                  <ArrowRight size={20} className="text-zinc-600 group-hover:text-orange-400 transition-colors" />
+                </div>
+              </div>
+            ) : (
+              <div className="card space-y-5">
+                {/* Difficulty Picker */}
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Bot size={14} /> Difficulty
+                  </h3>
+                  <div className="grid grid-cols-5 gap-2">
+                    {DIFFICULTY_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setSelectedDifficulty(opt.value)}
+                        className={`py-2.5 px-1 rounded-xl text-xs font-semibold transition-all border-2 active:scale-95 flex flex-col items-center gap-1 ${
+                          selectedDifficulty === opt.value
+                            ? 'bg-orange-500/20 text-orange-400 border-orange-500/50'
+                            : 'bg-zinc-800/80 text-zinc-400 border-zinc-700/50 hover:border-zinc-600 hover:text-zinc-300'
+                        }`}
+                      >
+                        <span className="text-base">{opt.emoji}</span>
+                        <span>{opt.label}</span>
+                        <span className="text-[10px] text-zinc-500">{opt.elo}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Side Picker */}
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Crown size={14} /> Pick your side
+                  </h3>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setBotSide('white')}
+                      className={`flex-1 font-bold py-3 rounded-xl transition-all flex flex-col items-center gap-1.5 border-2 active:scale-95 ${
+                        botSide === 'white'
+                          ? 'bg-white text-zinc-900 border-orange-400 shadow-lg shadow-orange-500/20'
+                          : 'bg-zinc-100 hover:bg-white text-zinc-700 border-transparent'
+                      }`}
+                    >
+                      <span className="text-2xl">♔</span>
+                      <span className="text-sm">White</span>
+                    </button>
+                    <button
+                      onClick={() => setBotSide('black')}
+                      className={`flex-1 font-bold py-3 rounded-xl transition-all flex flex-col items-center gap-1.5 border-2 active:scale-95 ${
+                        botSide === 'black'
+                          ? 'bg-zinc-700 text-white border-orange-400 shadow-lg shadow-orange-500/20'
+                          : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-transparent'
+                      }`}
+                    >
+                      <span className="text-2xl">♚</span>
+                      <span className="text-sm">Black</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Time Picker */}
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Timer size={14} /> Time per move
+                  </h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    {TIME_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.label}
+                        onClick={() => setBotTime(opt.value)}
+                        className={`py-2.5 px-3 rounded-xl text-sm font-semibold transition-all border-2 active:scale-95 ${
+                          botTime === opt.value
+                            ? 'bg-orange-500/20 text-orange-400 border-orange-500/50'
+                            : 'bg-zinc-800/80 text-zinc-400 border-zinc-700/50 hover:border-zinc-600 hover:text-zinc-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={createBotGame}
+                  disabled={isCreatingBot}
+                  className="w-full font-bold py-3.5 px-6 rounded-xl bg-orange-500 hover:bg-orange-400 text-white transition-all flex items-center justify-center gap-2 text-base active:scale-[0.98] disabled:opacity-50"
+                >
+                  {isCreatingBot ? (
+                    <span className="inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Bot size={18} /> Play vs Bot
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setShowBotPanel(false)}
+                  className="w-full text-zinc-500 hover:text-zinc-300 text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {/* Create Game (Human) */}
             {!showCreatePanel ? (
-              <div className="card-hover group" onClick={() => setShowCreatePanel(true)}>
+              <div className="card-hover group" onClick={() => { setShowCreatePanel(true); setShowBotPanel(false); }}>
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
                     <Plus size={24} className="text-emerald-400" />

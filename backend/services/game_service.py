@@ -1,5 +1,6 @@
 from core.database import db_client
 from services import user_service
+from services import bot_service
 from typing import List, Dict, Any, Optional, Tuple
 import secrets
 import string
@@ -213,3 +214,106 @@ async def abort_game(game_id: int) -> Optional[Dict[str, Any]]:
         RETURNING *
     """
     return await db_client.execute_returning(query, game_id)
+
+
+# ── Bot game helpers ──
+
+
+async def create_bot_game(
+    user_id: int,
+    side: str = "white",
+    difficulty: str = "medium",
+    time_per_move: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Create a game against the bot. Immediately active (no waiting)."""
+    room_code = generate_room_code()
+
+    if side == "white":
+        white_id, black_id = user_id, None
+    else:
+        white_id, black_id = None, user_id
+
+    query = """
+        INSERT INTO games (
+            room_code, white_player_id, black_player_id,
+            status, time_per_move, is_bot_game, bot_difficulty
+        ) VALUES ($1, $2, $3, 'active', $4, TRUE, $5)
+        RETURNING *
+    """
+    return await db_client.execute_returning(
+        query, room_code, white_id, black_id, time_per_move, difficulty
+    )
+
+
+async def update_bot_elo_after_game(
+    game_id: int, winner_id: Optional[int]
+) -> Optional[Dict[str, Any]]:
+    """Update user's bot_elo after a bot game.
+
+    Returns dict with elo_change and new_elo, or None.
+    """
+    game = await get_game_by_id(game_id)
+    if not game or not game.get("is_bot_game"):
+        return None
+
+    # Find the human player
+    human_id = game.get("white_player_id") or game.get("black_player_id")
+    if not human_id:
+        return None
+
+    human = await user_service.get_user_by_id(human_id)
+    if not human:
+        return None
+
+    old_elo = human.get("bot_elo", 1200)
+    bot_elo_val = bot_service.get_bot_elo(game.get("bot_difficulty", "medium"))
+
+    is_white = game["white_player_id"] == human_id
+
+    if winner_id == human_id:
+        result = "white" if is_white else "black"
+    elif winner_id is not None:
+        # winner_id is set but not human → bot won (shouldn't happen with current logic)
+        result = "black" if is_white else "white"
+    else:
+        # winner_id is None — could be draw or bot win
+        # We need extra context; caller should set winner_id = -1 for bot wins
+        # For safety, treat as draw
+        result = "draw"
+
+    if is_white:
+        new_human_elo, _ = calculate_elo(old_elo, bot_elo_val, result)
+    else:
+        _, new_human_elo = calculate_elo(bot_elo_val, old_elo, result)
+
+    await user_service.update_bot_elo(human_id, new_human_elo)
+
+    return {
+        "elo_change": new_human_elo - old_elo,
+        "new_elo": new_human_elo,
+    }
+
+
+async def get_game_players_bot(game: Dict[str, Any]) -> Dict[str, Any]:
+    """Get player display names for a bot game."""
+    result: Dict[str, Any] = {"white": None, "black": None}
+    difficulty = game.get("bot_difficulty", "medium")
+    bot_name = bot_service.get_bot_display_name(difficulty)
+
+    if game.get("white_player_id"):
+        user = await db_client.read_one(
+            "SELECT id, username FROM users WHERE id = $1", game["white_player_id"]
+        )
+        if user:
+            result["white"] = {"id": user["id"], "name": user["username"].split("@")[0]}
+        result["black"] = {"id": -1, "name": bot_name}
+    else:
+        result["white"] = {"id": -1, "name": bot_name}
+        if game.get("black_player_id"):
+            user = await db_client.read_one(
+                "SELECT id, username FROM users WHERE id = $1", game["black_player_id"]
+            )
+            if user:
+                result["black"] = {"id": user["id"], "name": user["username"].split("@")[0]}
+
+    return result

@@ -10,6 +10,8 @@ class GameSimple(BaseModel):
     room_code: Optional[str] = None
     status: str
     winner_id: Optional[int] = None
+    is_bot_game: bool = False
+    bot_difficulty: Optional[str] = None
     created_at: datetime
     white_player: Optional[UserPublic] = None
     black_player: Optional[UserPublic] = None

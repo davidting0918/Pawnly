@@ -40,6 +40,13 @@ async def get_user_games(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
     return await db_client.read(query, user_id, limit)
 
 
+async def get_leaderboard_with_bot_elo(limit: int = 10) -> List[Dict[str, Any]]:
+    return await db_client.read(
+        "SELECT id, username, elo_rating, bot_elo, created_at FROM users ORDER BY elo_rating DESC LIMIT $1",
+        limit,
+    )
+
+
 async def get_leaderboard(limit: int = 10) -> List[Dict[str, Any]]:
     return await db_client.read(
         "SELECT id, username, elo_rating, created_at FROM users ORDER BY elo_rating DESC LIMIT $1",
@@ -50,4 +57,17 @@ async def get_leaderboard(limit: int = 10) -> List[Dict[str, Any]]:
 async def update_elo(user_id: int, new_elo: int) -> None:
     await db_client.execute(
         "UPDATE users SET elo_rating = $1 WHERE id = $2", new_elo, user_id
+    )
+
+
+async def update_bot_elo(user_id: int, new_elo: int) -> None:
+    await db_client.execute(
+        "UPDATE users SET bot_elo = $1 WHERE id = $2", new_elo, user_id
+    )
+
+
+async def get_bot_leaderboard(limit: int = 10) -> List[Dict[str, Any]]:
+    return await db_client.read(
+        "SELECT id, username, bot_elo FROM users ORDER BY bot_elo DESC LIMIT $1",
+        limit,
     )
