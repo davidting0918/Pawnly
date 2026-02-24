@@ -5,8 +5,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../store/store';
 import apiClient from '../api/axios';
-import { ArrowLeft, Copy, Check, WifiOff, Flag, RotateCcw, Clock, ShieldX, Timer } from 'lucide-react';
-import { CaptureEffect, CheckmateOverlay, useSquareHighlights, findKingSquare } from '../components/BoardEffects';
+import { ArrowLeft, Copy, Check, WifiOff, Flag, RotateCcw, Clock, ShieldX, Timer, Palette } from 'lucide-react';
+import { findKingSquare } from '../components/BoardEffects';
+import { EffectsLayer } from '../components/ExperimentalEffectsWrapper';
+import BoardThemePicker from '../components/BoardThemePicker';
+import { getThemeById, getSavedThemeId, saveThemeId, type BoardTheme } from '../themes/boardThemes';
 
 type GamePhase = 'loading' | 'joining' | 'waiting' | 'playing' | 'finished' | 'blocked';
 
@@ -152,6 +155,15 @@ const Game: React.FC = () => {
   const [boardSize, setBoardSize] = useState(0);
   const boardContainerRef = useRef<HTMLDivElement>(null);
 
+  // Board theme
+  const [boardTheme, setBoardTheme] = useState<BoardTheme>(() => getThemeById(getSavedThemeId()));
+  const [showThemePicker, setShowThemePicker] = useState(false);
+  const handleThemeSelect = (theme: BoardTheme) => {
+    setBoardTheme(theme);
+    saveThemeId(theme.id);
+    setShowThemePicker(false);
+  };
+
   const ws = useRef<WebSocket | null>(null);
   const phaseRef = useRef<GamePhase>('loading');
   const mySideRef = useRef<'w' | 'b' | null>(null);
@@ -200,17 +212,29 @@ const Game: React.FC = () => {
     return () => obs.disconnect();
   }, [phase]);
 
-  // Square highlight styles (last move + check)
+  // Square highlight styles (last move + check) — only for non-effects themes
   const checkSquare = useMemo(() => {
     if (!game.isCheck()) return null;
     return findKingSquare(game.fen(), game.turn());
   }, [game]);
 
-  const squareHighlights = useSquareHighlights({
-    lastMove: lastMoveSquares,
-    isCheck: game.isCheck(),
-    checkSquare,
-  });
+  // Simple highlights for normal (non-FX) boards
+  const squareHighlights = useMemo<Record<string, React.CSSProperties>>(() => {
+    if (boardTheme.effects) return {}; // FX themes use overlay effects instead
+    const s: Record<string, React.CSSProperties> = {};
+    if (lastMoveSquares) {
+      s[lastMoveSquares.from] = { backgroundColor: 'rgba(250, 204, 21, 0.25)' };
+      s[lastMoveSquares.to] = { boxShadow: 'inset 0 0 10px rgba(52, 211, 153, 0.5)' };
+    }
+    if (game.isCheck() && checkSquare) {
+      s[checkSquare] = {
+        ...(s[checkSquare] || {}),
+        backgroundColor: 'rgba(239, 68, 68, 0.35)',
+        boxShadow: 'inset 0 0 16px rgba(239, 68, 68, 0.5)',
+      };
+    }
+    return s;
+  }, [lastMoveSquares, game, checkSquare, boardTheme.effects]);
 
   // ── WebSocket setup ──
   useEffect(() => {
@@ -469,6 +493,13 @@ const Game: React.FC = () => {
           {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} className="text-zinc-500" />}
         </button>
         <div className="flex items-center gap-3 text-xs">
+          <button
+            onClick={() => setShowThemePicker(!showThemePicker)}
+            className="flex items-center gap-1 text-zinc-500 hover:text-emerald-400 transition-colors"
+            title="Board Theme"
+          >
+            <Palette size={14} />
+          </button>
           <span className="text-zinc-500 font-medium">{mySide === 'w' ? '♔ White' : '♚ Black'}</span>
           {isConnected ? (
             <span className="flex items-center gap-1.5 text-emerald-400">
@@ -504,31 +535,36 @@ const Game: React.FC = () => {
             timeLeft={topTimeLeft}
             hasTimer={!!timePerMove}
           />
-          <div ref={boardContainerRef} className="relative rounded-2xl overflow-hidden shadow-2xl shadow-black/50 border border-zinc-800">
+          <div
+            ref={boardContainerRef}
+            className={`relative rounded-2xl overflow-hidden shadow-2xl shadow-black/50 border ${boardTheme.boardBorder || 'border-zinc-800'} ${
+              boardTheme.effects ? 'ring-1 ring-inset ring-white/5' : ''
+            }`}
+          >
             <Chessboard
               options={{
                 position: game.fen(),
                 onPieceDrop: onDrop,
                 boardOrientation,
-                darkSquareStyle: { backgroundColor: '#779952' },
-                lightSquareStyle: { backgroundColor: '#e9edcc' },
+                darkSquareStyle: boardTheme.darkSquare,
+                lightSquareStyle: boardTheme.lightSquare,
                 animationDurationInMs: 200,
                 allowDragging: phase === 'playing' && isMyTurn,
                 squareStyles: squareHighlights,
               }}
             />
-            {/* Effects overlay */}
-            {captureSquare && boardSize > 0 && (
-              <CaptureEffect
-                square={captureSquare}
+            {/* Experimental effects — lazy-loaded only when using FX themes */}
+            {boardTheme.effects && boardSize > 0 && (
+              <EffectsLayer
+                theme={boardTheme}
                 boardSize={boardSize}
                 orientation={boardOrientation}
-                onDone={() => setCaptureSquare(null)}
-              />
-            )}
-            {showCheckmate && boardSize > 0 && (
-              <CheckmateOverlay
-                boardSize={boardSize}
+                captureSquare={captureSquare}
+                onCaptureDone={() => setCaptureSquare(null)}
+                lastMove={lastMoveSquares ? { from: lastMoveSquares.from, to: lastMoveSquares.to } : null}
+                isCheck={game.isCheck()}
+                checkSquare={checkSquare}
+                showCheckmate={showCheckmate}
                 isWinner={!!winnerId && !!user && winnerId === user.id}
               />
             )}
@@ -636,6 +672,15 @@ const Game: React.FC = () => {
               <div ref={movesEndRef} />
             </div>
           </div>
+
+          {/* Board Theme Picker */}
+          {showThemePicker && (
+            <BoardThemePicker
+              currentThemeId={boardTheme.id}
+              onSelect={handleThemeSelect}
+              onClose={() => setShowThemePicker(false)}
+            />
+          )}
 
           {/* Resign */}
           {phase === 'playing' && (
