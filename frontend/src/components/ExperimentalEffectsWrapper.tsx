@@ -1,13 +1,9 @@
 /**
- * Wrapper for lazy-loading experimental effects.
- * This module re-exports everything from ExperimentalEffects
- * so it can be loaded as a single lazy chunk.
+ * Lazy-loading wrapper for experimental effects.
+ * tsParticles + framer-motion only load when an FX theme is active.
  */
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense } from 'react';
 import type { BoardTheme } from '../themes/boardThemes';
-
-// Lazy-load the heavy effects module (tsParticles + framer-motion)
-const Effects = lazy(() => import('./ExperimentalEffects'));
 
 interface EffectsLayerProps {
   theme: BoardTheme;
@@ -24,10 +20,14 @@ interface EffectsLayerProps {
 
 const EffectsLayerInner = React.lazy(() =>
   import('./ExperimentalEffects').then((mod) => ({
-    default: (props: EffectsLayerProps) => {
-      const { theme, boardSize, orientation, captureSquare, onCaptureDone,
-              lastMove, isCheck, checkSquare, showCheckmate, isWinner } = props;
+    default: function EffectsLayerImpl(props: EffectsLayerProps) {
+      const {
+        theme, boardSize, orientation, captureSquare, onCaptureDone,
+        lastMove, isCheck, checkSquare, showCheckmate, isWinner,
+      } = props;
+
       if (boardSize === 0) return null;
+
       return (
         <>
           <mod.NeonGridOverlay theme={theme} />
@@ -72,10 +72,8 @@ const EffectsLayerInner = React.lazy(() =>
   }))
 );
 
-export const EffectsLayer: React.FC<EffectsLayerProps> = (props) => {
-  return (
-    <Suspense fallback={null}>
-      <EffectsLayerInner {...props} />
-    </Suspense>
-  );
-};
+export const EffectsLayer: React.FC<EffectsLayerProps> = (props) => (
+  <Suspense fallback={null}>
+    <EffectsLayerInner {...props} />
+  </Suspense>
+);

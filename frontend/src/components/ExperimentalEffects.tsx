@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import Particles, { initParticlesEngine } from '@tsparticles/react';
 import { loadSlim } from '@tsparticles/slim';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import type { BoardTheme } from '../themes/boardThemes';
 
 // ── Initialize tsParticles engine once ──
@@ -197,7 +197,7 @@ export const CheckPulse: React.FC<CheckPulseProps> = ({
   square,
   boardSize,
   orientation,
-  theme,
+  theme: _theme,
 }) => {
   const pos = getSquareCenter(square, boardSize, orientation);
   const sq = boardSize / 8;
