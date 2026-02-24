@@ -148,6 +148,8 @@ const Game: React.FC = () => {
   const [turnStartedAt, setTurnStartedAt] = useState<string | null>(null);
   const [clockTick, setClockTick] = useState(0);
   const [eloChange, setEloChange] = useState<number | null>(null);
+  const [isBotGame, setIsBotGame] = useState(false);
+  const [_botDifficulty, setBotDifficulty] = useState<string | null>(null);
 
   const [lastMoveSquares, setLastMoveSquares] = useState<{ from: string; to: string; san: string } | null>(null);
   const [captureSquare, setCaptureSquare] = useState<string | null>(null);
@@ -263,6 +265,7 @@ const Game: React.FC = () => {
           if (data.moves) setMoveHistory(data.moves);
           if (data.time_per_move != null) setTimePerMove(data.time_per_move);
           if (data.turn_started_at) setTurnStartedAt(data.turn_started_at);
+          if (data.is_bot_game) { setIsBotGame(true); setBotDifficulty(data.bot_difficulty); }
           updatePhase(data.status === 'active' ? 'playing' : 'waiting');
         } else if (data.type === 'game_start') {
           setGame(new Chess(data.fen));
@@ -302,7 +305,9 @@ const Game: React.FC = () => {
               setShowCheckmate(true);
             } else if (data.stalemate) setGameOverReason('Stalemate');
             else setGameOverReason('Draw');
-            if (data.elo_change_white != null && data.elo_change_black != null) {
+            if (data.bot_elo_change != null) {
+              setEloChange(data.bot_elo_change);
+            } else if (data.elo_change_white != null && data.elo_change_black != null) {
               setEloChange(mySideRef.current === 'w' ? data.elo_change_white : data.elo_change_black);
             }
           }
@@ -313,7 +318,9 @@ const Game: React.FC = () => {
           const reasons: Record<string, string> = { resign: 'Resignation', timeout: 'Time ran out' };
           setGameOverReason(reasons[data.reason] || 'Game Over');
           if (data.fen) setGame(new Chess(data.fen));
-          if (data.elo_change_white != null && data.elo_change_black != null) {
+          if (data.bot_elo_change != null) {
+            setEloChange(data.bot_elo_change);
+          } else if (data.elo_change_white != null && data.elo_change_black != null) {
             setEloChange(mySideRef.current === 'w' ? data.elo_change_white : data.elo_change_black);
           }
         } else if (data.type === 'error') {
@@ -449,8 +456,14 @@ const Game: React.FC = () => {
 
   const resultText = (() => {
     if (phase !== 'finished') return null;
-    if (!winnerId) return '½ – ½  Draw';
     if (user && winnerId === user.id) return 'You won!';
+    if (isBotGame) {
+      // In bot games: winner_id = user.id means human won, null = bot won or draw
+      if (!winnerId && game.isCheckmate()) return 'You lost';
+      if (!winnerId && game.isStalemate()) return '½ – ½  Draw';
+      if (!winnerId) return 'You lost';
+    }
+    if (!winnerId) return '½ – ½  Draw';
     return 'You lost';
   })();
 
@@ -593,7 +606,7 @@ const Game: React.FC = () => {
                         eloChange > 0 ? 'text-emerald-400' : eloChange < 0 ? 'text-red-400' : 'text-zinc-400'
                       }`}
                     >
-                      {eloChange > 0 ? '+' : ''}{eloChange} Elo
+                      {eloChange > 0 ? '+' : ''}{eloChange} {isBotGame ? 'Bot Elo' : 'Elo'}
                     </span>
                   )}
                 </p>

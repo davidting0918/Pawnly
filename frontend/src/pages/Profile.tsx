@@ -3,16 +3,26 @@ import { useSelector } from 'react-redux';
 import type { RootState } from '../store/store';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/axios';
-import { User, Crown, ArrowLeft, Swords, Trophy, TrendingUp } from 'lucide-react';
+import { User, Crown, ArrowLeft, Swords, Trophy, TrendingUp, Bot } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface GameRecord {
   id: number;
   status: string;
   winner_id: number | null;
+  is_bot_game?: boolean;
+  bot_difficulty?: string | null;
   created_at: string;
   white_player: { id: number; username: string; elo_rating: number } | null;
   black_player: { id: number; username: string; elo_rating: number } | null;
+}
+
+interface UserProfile {
+  id: number;
+  username: string;
+  elo_rating: number;
+  bot_elo: number | null;
+  created_at: string;
 }
 
 const Profile: React.FC = () => {
@@ -20,6 +30,7 @@ const Profile: React.FC = () => {
   const navigate = useNavigate();
   const [games, setGames] = useState<GameRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -27,6 +38,9 @@ const Profile: React.FC = () => {
         .then(res => setGames(res.data))
         .catch(console.error)
         .finally(() => setLoading(false));
+      apiClient.get('/api/users/me')
+        .then(res => setProfile(res.data))
+        .catch(console.error);
     }
   }, [user]);
 
@@ -63,6 +77,20 @@ const Profile: React.FC = () => {
               <h1 className="text-2xl font-bold text-white">{user.username.split('@')[0]}</h1>
               <p className="text-zinc-500 text-sm">{user.username}</p>
             </div>
+          </div>
+        </div>
+
+        {/* Elo Ratings */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="card text-center">
+            <Crown size={20} className="text-emerald-400 mx-auto mb-2" />
+            <p className="text-2xl font-bold text-white">{profile?.elo_rating ?? '—'}</p>
+            <p className="text-zinc-500 text-xs">Human Elo</p>
+          </div>
+          <div className="card text-center">
+            <Bot size={20} className="text-orange-400 mx-auto mb-2" />
+            <p className="text-2xl font-bold text-white">{profile?.bot_elo ?? '—'}</p>
+            <p className="text-zinc-500 text-xs">Bot Elo</p>
           </div>
         </div>
 
@@ -107,20 +135,35 @@ const Profile: React.FC = () => {
             <div className="space-y-2">
               {games.map(g => {
                 const isWin = g.winner_id === user.id;
-                const isDraw = g.status === 'finished' && !g.winner_id;
-                const opponent = g.white_player?.id === user.id
-                  ? g.black_player?.username
-                  : g.white_player?.username;
+                const isBot = g.is_bot_game;
+                const isDraw = g.status === 'finished' && !g.winner_id && !isBot;
+
+                let opponent: string | undefined;
+                if (isBot) {
+                  const diffLabel = g.bot_difficulty
+                    ? g.bot_difficulty.charAt(0).toUpperCase() + g.bot_difficulty.slice(1)
+                    : 'Bot';
+                  opponent = `🤖 Bot (${diffLabel})`;
+                } else {
+                  opponent = g.white_player?.id === user.id
+                    ? g.black_player?.username
+                    : g.white_player?.username;
+                  if (opponent) opponent = opponent.split('@')[0];
+                }
+
+                const resultColor = isWin ? 'bg-emerald-400' : (isDraw ? 'bg-zinc-500' : 'bg-red-400');
+                const resultLabel = isWin ? 'Win' : isDraw ? 'Draw' : 'Loss';
+                const resultTextColor = isWin ? 'text-emerald-400' : isDraw ? 'text-zinc-500' : 'text-red-400';
 
                 return (
                   <div key={g.id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/40 hover:bg-zinc-800/70 transition-colors">
-                    <div className={`w-2 h-8 rounded-full ${isWin ? 'bg-emerald-400' : isDraw ? 'bg-zinc-500' : 'bg-red-400'}`} />
+                    <div className={`w-2 h-8 rounded-full ${resultColor}`} />
                     <div className="flex-1 min-w-0">
                       <p className="text-white font-medium text-sm truncate">
-                        vs {opponent ? opponent.split('@')[0] : '—'}
+                        vs {opponent || '—'}
                       </p>
-                      <p className={`text-xs ${isWin ? 'text-emerald-400' : isDraw ? 'text-zinc-500' : 'text-red-400'}`}>
-                        {isWin ? 'Win' : isDraw ? 'Draw' : 'Loss'}
+                      <p className={`text-xs ${resultTextColor}`}>
+                        {resultLabel}
                       </p>
                     </div>
                     <span className="text-zinc-600 text-xs">{format(new Date(g.created_at), 'MMM d')}</span>

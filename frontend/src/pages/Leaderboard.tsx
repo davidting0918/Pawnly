@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Crown, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Crown, ArrowLeft, RefreshCw, Bot, Users } from 'lucide-react';
 import apiClient from '../api/axios';
 
 interface LeaderboardEntry {
   id: number;
   username: string;
   elo_rating: number;
+  bot_elo?: number;
 }
+
+type LeaderboardTab = 'human' | 'bot';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 const RANK_COLORS = ['text-yellow-400', 'text-zinc-300', 'text-amber-600'];
@@ -17,10 +20,13 @@ const Leaderboard: React.FC = () => {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [tab, setTab] = useState<LeaderboardTab>('human');
 
   const fetchLeaderboard = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await apiClient.get('/api/users/leaderboard?limit=20');
+      const params = tab === 'bot' ? '?type=bot&limit=20' : '?limit=20';
+      const res = await apiClient.get(`/api/users/leaderboard${params}`);
       setEntries(res.data);
       setError('');
     } catch {
@@ -28,7 +34,7 @@ const Leaderboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tab]);
 
   useEffect(() => {
     fetchLeaderboard();
@@ -46,8 +52,9 @@ const Leaderboard: React.FC = () => {
     };
   }, [fetchLeaderboard]);
 
-  const maxElo = entries.length > 0 ? entries[0].elo_rating : 1200;
-  const minElo = entries.length > 0 ? Math.min(...entries.map((e) => e.elo_rating)) : 1200;
+  const getElo = (e: LeaderboardEntry) => tab === 'bot' ? (e.bot_elo ?? 1200) : e.elo_rating;
+  const maxElo = entries.length > 0 ? getElo(entries[0]) : 1200;
+  const minElo = entries.length > 0 ? Math.min(...entries.map(getElo)) : 1200;
   const eloRange = Math.max(maxElo - minElo, 1);
 
   return (
@@ -76,7 +83,7 @@ const Leaderboard: React.FC = () => {
       {/* Main */}
       <main className="flex-1 flex flex-col items-center px-4 py-8 sm:py-12">
         {/* Title */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <div className="inline-flex items-center gap-2 mb-4">
             <Crown size={32} className="text-yellow-400" />
             <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
@@ -84,6 +91,30 @@ const Leaderboard: React.FC = () => {
             </h1>
           </div>
           <p className="text-zinc-500 text-sm">Top players by Elo rating</p>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex items-center gap-2 mb-6 bg-zinc-900/80 rounded-xl p-1 border border-zinc-800/50">
+          <button
+            onClick={() => setTab('human')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
+              tab === 'human'
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            <Users size={16} /> Human
+          </button>
+          <button
+            onClick={() => setTab('bot')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
+              tab === 'bot'
+                ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            <Bot size={16} /> Bot
+          </button>
         </div>
 
         {loading ? (
@@ -110,7 +141,8 @@ const Leaderboard: React.FC = () => {
               const displayName = entry.username.includes('@')
                 ? entry.username.split('@')[0]
                 : entry.username;
-              const barWidth = ((entry.elo_rating - minElo) / eloRange) * 100;
+              const displayElo = getElo(entry);
+              const barWidth = ((displayElo - minElo) / eloRange) * 100;
 
               return (
                 <div
@@ -156,7 +188,7 @@ const Leaderboard: React.FC = () => {
                         ? `text-lg ${RANK_COLORS[index]}`
                         : 'text-zinc-400'
                     }`}>
-                      {entry.elo_rating}
+                      {displayElo}
                     </div>
                   </div>
                 </div>

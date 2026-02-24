@@ -6,7 +6,7 @@ import chess
 
 from core.security import get_current_user
 from core.socket_manager import manager
-from services import game_service
+from services import game_service, bot_service
 
 router = APIRouter()
 
@@ -16,6 +16,12 @@ turn_start_cache: Dict[str, str] = {}
 
 class CreateGameRequest(BaseModel):
     side: str = "white"
+    time_per_move: Optional[int] = None
+
+
+class CreateBotGameRequest(BaseModel):
+    side: str = "white"
+    difficulty: str = "medium"
     time_per_move: Optional[int] = None
 
 
@@ -35,6 +41,36 @@ async def create_game(
         "room_code": game["room_code"],
         "status": game["status"],
         "side": body.side,
+        "time_per_move": game.get("time_per_move"),
+    }
+
+
+@router.post("/games/bot")
+async def create_bot_game(
+    body: CreateBotGameRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    if body.side not in ("white", "black"):
+        raise HTTPException(status_code=400, detail="side must be 'white' or 'black'")
+    if body.difficulty not in bot_service.VALID_DIFFICULTIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"difficulty must be one of: {', '.join(bot_service.VALID_DIFFICULTIES)}",
+        )
+
+    game = await game_service.create_bot_game(
+        current_user["id"],
+        side=body.side,
+        difficulty=body.difficulty,
+        time_per_move=body.time_per_move,
+    )
+    return {
+        "id": game["id"],
+        "room_code": game["room_code"],
+        "status": game["status"],
+        "side": body.side,
+        "difficulty": body.difficulty,
+        "is_bot_game": True,
         "time_per_move": game.get("time_per_move"),
     }
 
@@ -96,12 +132,18 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
         await websocket.close(code=4004, reason="Game not found")
         return
 
+    is_bot_game = game.get("is_bot_game", False)
+    difficulty = game.get("bot_difficulty", "medium")
+
     if ws_user_id != game["white_player_id"] and ws_user_id != game["black_player_id"]:
         await websocket.send_json({"type": "error", "message": "You are not a player in this game"})
         await websocket.close(code=4003, reason="Not a player")
         return
 
     player_side = "w" if ws_user_id == game["white_player_id"] else "b"
+    bot_side = None
+    if is_bot_game:
+        bot_side = "b" if game["white_player_id"] == ws_user_id else "w"
 
     if room_code not in manager.active_connections:
         manager.active_connections[room_code] = []
@@ -111,7 +153,10 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
         boards_cache[room_code] = chess.Board(game["fen"])
     board = boards_cache[room_code]
 
-    players = await game_service.get_game_players(game)
+    if is_bot_game:
+        players = await game_service.get_game_players_bot(game)
+    else:
+        players = await game_service.get_game_players(game)
     existing_moves = await game_service.get_game_moves(game["id"])
     move_list = [
         {"move_number": m["move_number"], "color": m["color"], "san": m["san"]}
@@ -136,9 +181,12 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
         "moves": move_list,
         "time_per_move": time_per_move,
         "turn_started_at": turn_started_at,
+        "is_bot_game": is_bot_game,
+        "bot_difficulty": difficulty if is_bot_game else None,
     })
 
-    if game["status"] == "active" and manager.get_connection_count(room_code) >= 2:
+    # For human vs human: broadcast game_start when both connect
+    if not is_bot_game and game["status"] == "active" and manager.get_connection_count(room_code) >= 2:
         now_iso = datetime.now(timezone.utc).isoformat()
         if room_code not in turn_start_cache:
             turn_start_cache[room_code] = now_iso
@@ -157,6 +205,10 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
             },
             room_code,
         )
+
+    # For bot games: if bot plays white, make opening move immediately
+    if is_bot_game and bot_side == "w" and len(existing_moves) == 0 and not board.is_game_over():
+        await _make_bot_move(board, game, room_code, difficulty, time_per_move)
 
     try:
         while True:
@@ -194,12 +246,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                     winner_id = None
                     if board.is_checkmate():
                         status = "finished"
-                        game_data = await game_service.get_game_by_room_code(room_code)
-                        winner_id = (
-                            game_data["white_player_id"]
-                            if color == "w"
-                            else game_data["black_player_id"]
-                        )
+                        winner_id = ws_user_id  # Human made the checkmating move
                     elif board.is_stalemate() or board.is_insufficient_material() or board.can_claim_draw():
                         status = "finished"
 
@@ -213,7 +260,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                     now_iso = datetime.now(timezone.utc).isoformat()
                     turn_start_cache[room_code] = now_iso
 
-                    broadcast_payload = {
+                    broadcast_payload: Dict[str, Any] = {
                         "type": "update",
                         "fen": board.fen(),
                         "last_move": {
@@ -235,16 +282,24 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                     }
 
                     if board.is_game_over():
-                        elo_result = await game_service.update_elo_after_game(game["id"], winner_id)
-                        if elo_result:
-                            broadcast_payload["elo_change_white"] = elo_result["elo_change_white"]
-                            broadcast_payload["elo_change_black"] = elo_result["elo_change_black"]
+                        if is_bot_game:
+                            elo_result = await game_service.update_bot_elo_after_game(game["id"], winner_id)
+                            if elo_result:
+                                broadcast_payload["bot_elo_change"] = elo_result["elo_change"]
+                        else:
+                            elo_result = await game_service.update_elo_after_game(game["id"], winner_id)
+                            if elo_result:
+                                broadcast_payload["elo_change_white"] = elo_result["elo_change_white"]
+                                broadcast_payload["elo_change_black"] = elo_result["elo_change_black"]
 
                     await manager.broadcast(broadcast_payload, room_code)
 
                     if board.is_game_over():
                         boards_cache.pop(room_code, None)
                         turn_start_cache.pop(room_code, None)
+                    elif is_bot_game:
+                        # Bot's turn — make bot move
+                        await _make_bot_move(board, game, room_code, difficulty, time_per_move)
 
                 except ValueError:
                     await websocket.send_json({"type": "error", "message": "Invalid move format"})
@@ -260,11 +315,16 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                     continue
 
                 current_turn = "w" if board.turn == chess.WHITE else "b"
-                game_data = await game_service.get_game_by_room_code(room_code)
-                if current_turn == "w":
-                    winner_id = game_data.get("black_player_id")
+
+                if is_bot_game:
+                    # In bot games, timeout only happens to the human
+                    winner_id = None  # Bot wins → no winner_id
                 else:
-                    winner_id = game_data.get("white_player_id")
+                    game_data = await game_service.get_game_by_room_code(room_code)
+                    if current_turn == "w":
+                        winner_id = game_data.get("black_player_id")
+                    else:
+                        winner_id = game_data.get("white_player_id")
 
                 await game_service.update_game_state(
                     game["id"], board.fen(), board.board_fen(), "finished", winner_id
@@ -275,20 +335,29 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                     "winner_id": winner_id,
                     "fen": board.fen(),
                 }
-                elo_result = await game_service.update_elo_after_game(game["id"], winner_id)
-                if elo_result:
-                    timeout_payload["elo_change_white"] = elo_result["elo_change_white"]
-                    timeout_payload["elo_change_black"] = elo_result["elo_change_black"]
+                if is_bot_game:
+                    elo_result = await game_service.update_bot_elo_after_game(game["id"], winner_id)
+                    if elo_result:
+                        timeout_payload["bot_elo_change"] = elo_result["elo_change"]
+                else:
+                    elo_result = await game_service.update_elo_after_game(game["id"], winner_id)
+                    if elo_result:
+                        timeout_payload["elo_change_white"] = elo_result["elo_change_white"]
+                        timeout_payload["elo_change_black"] = elo_result["elo_change_black"]
                 await manager.broadcast(timeout_payload, room_code)
                 boards_cache.pop(room_code, None)
                 turn_start_cache.pop(room_code, None)
 
             elif data.get("type") == "resign":
-                game_data = await game_service.get_game_by_room_code(room_code)
-                if player_side == "w":
-                    winner_id = game_data.get("black_player_id")
+                if is_bot_game:
+                    # Human resigns → bot wins → winner_id = None
+                    winner_id = None
                 else:
-                    winner_id = game_data.get("white_player_id")
+                    game_data = await game_service.get_game_by_room_code(room_code)
+                    if player_side == "w":
+                        winner_id = game_data.get("black_player_id")
+                    else:
+                        winner_id = game_data.get("white_player_id")
 
                 await game_service.update_game_state(
                     game["id"], board.fen(), board.board_fen(), "finished", winner_id
@@ -299,10 +368,15 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                     "winner_id": winner_id,
                     "fen": board.fen(),
                 }
-                elo_result = await game_service.update_elo_after_game(game["id"], winner_id)
-                if elo_result:
-                    resign_payload["elo_change_white"] = elo_result["elo_change_white"]
-                    resign_payload["elo_change_black"] = elo_result["elo_change_black"]
+                if is_bot_game:
+                    elo_result = await game_service.update_bot_elo_after_game(game["id"], winner_id)
+                    if elo_result:
+                        resign_payload["bot_elo_change"] = elo_result["elo_change"]
+                else:
+                    elo_result = await game_service.update_elo_after_game(game["id"], winner_id)
+                    if elo_result:
+                        resign_payload["elo_change_white"] = elo_result["elo_change_white"]
+                        resign_payload["elo_change_black"] = elo_result["elo_change_black"]
                 await manager.broadcast(resign_payload, room_code)
                 boards_cache.pop(room_code, None)
                 turn_start_cache.pop(room_code, None)
@@ -312,3 +386,88 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
         if manager.get_connection_count(room_code) == 0:
             boards_cache.pop(room_code, None)
             turn_start_cache.pop(room_code, None)
+
+
+async def _make_bot_move(
+    board: chess.Board,
+    game: Dict[str, Any],
+    room_code: str,
+    difficulty: str,
+    time_per_move: Optional[int],
+) -> None:
+    """Generate and push a bot move, broadcast the update."""
+    if board.is_game_over():
+        return
+
+    try:
+        bot_move = await bot_service.get_bot_move(board, difficulty)
+    except Exception as e:
+        # If engine fails, try a random legal move
+        import random
+        legal = list(board.legal_moves)
+        if not legal:
+            return
+        bot_move = random.choice(legal)
+
+    bot_san = board.san(bot_move)
+    bot_color = "w" if board.turn == chess.WHITE else "b"
+    bot_move_number = board.fullmove_number
+
+    board.push(bot_move)
+
+    status = "active"
+    winner_id = None
+    if board.is_checkmate():
+        status = "finished"
+        # Bot won — winner_id stays None (no user account for bot)
+    elif board.is_stalemate() or board.is_insufficient_material() or board.can_claim_draw():
+        status = "finished"
+
+    await game_service.update_game_state(
+        game["id"], board.fen(), board.board_fen(), status, winner_id
+    )
+    await game_service.record_move(
+        game["id"],
+        bot_move_number,
+        bot_color,
+        bot_san,
+        bot_move.uci(),
+        board.fen(),
+    )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    turn_start_cache[room_code] = now_iso
+
+    broadcast_payload: Dict[str, Any] = {
+        "type": "update",
+        "fen": board.fen(),
+        "last_move": {
+            "from": chess.square_name(bot_move.from_square),
+            "to": chess.square_name(bot_move.to_square),
+            "san": bot_san,
+            "color": bot_color,
+            "move_number": bot_move_number,
+        },
+        "turn": "w" if board.turn == chess.WHITE else "b",
+        "check": board.is_check(),
+        "checkmate": board.is_checkmate(),
+        "stalemate": board.is_stalemate(),
+        "game_over": board.is_game_over(),
+        "status": status,
+        "winner_id": winner_id,
+        "turn_started_at": now_iso,
+        "time_per_move": time_per_move,
+    }
+
+    if board.is_game_over():
+        # Human player ID for elo update
+        human_id = game.get("white_player_id") or game.get("black_player_id")
+        elo_result = await game_service.update_bot_elo_after_game(game["id"], winner_id)
+        if elo_result:
+            broadcast_payload["bot_elo_change"] = elo_result["elo_change"]
+
+    await manager.broadcast(broadcast_payload, room_code)
+
+    if board.is_game_over():
+        boards_cache.pop(room_code, None)
+        turn_start_cache.pop(room_code, None)
