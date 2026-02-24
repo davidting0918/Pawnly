@@ -1,7 +1,83 @@
 from core.database import db_client
-from typing import List, Dict, Any, Optional
+from services import user_service
+from typing import List, Dict, Any, Optional, Tuple
 import secrets
 import string
+
+# ── Elo calculation ──
+
+K_FACTOR = 32
+
+
+def calculate_elo(
+    white_elo: int, black_elo: int, result: str
+) -> Tuple[int, int]:
+    """Pure Elo calculation.
+
+    Args:
+        white_elo: current Elo of white player
+        black_elo: current Elo of black player
+        result: "white" | "black" | "draw"
+
+    Returns:
+        (new_white_elo, new_black_elo)
+    """
+    expected_white = 1.0 / (1.0 + 10 ** ((black_elo - white_elo) / 400))
+    expected_black = 1.0 - expected_white
+
+    if result == "white":
+        actual_white, actual_black = 1.0, 0.0
+    elif result == "black":
+        actual_white, actual_black = 0.0, 1.0
+    else:  # draw
+        actual_white, actual_black = 0.5, 0.5
+
+    new_white = round(white_elo + K_FACTOR * (actual_white - expected_white))
+    new_black = round(black_elo + K_FACTOR * (actual_black - expected_black))
+    return new_white, new_black
+
+
+async def update_elo_after_game(
+    game_id: int, winner_id: Optional[int]
+) -> Optional[Dict[str, Any]]:
+    """Compute and persist new Elo ratings after a game finishes.
+
+    Returns dict with elo_change_white and elo_change_black, or None if
+    either player is missing.
+    """
+    game = await get_game_by_id(game_id)
+    if not game:
+        return None
+
+    white_id = game.get("white_player_id")
+    black_id = game.get("black_player_id")
+    if not white_id or not black_id:
+        return None
+
+    white_user = await user_service.get_user_by_id(white_id)
+    black_user = await user_service.get_user_by_id(black_id)
+    if not white_user or not black_user:
+        return None
+
+    old_white = white_user["elo_rating"]
+    old_black = black_user["elo_rating"]
+
+    if winner_id == white_id:
+        result = "white"
+    elif winner_id == black_id:
+        result = "black"
+    else:
+        result = "draw"
+
+    new_white, new_black = calculate_elo(old_white, old_black, result)
+
+    await user_service.update_elo(white_id, new_white)
+    await user_service.update_elo(black_id, new_black)
+
+    return {
+        "elo_change_white": new_white - old_white,
+        "elo_change_black": new_black - old_black,
+    }
 
 _time_column_available = False
 

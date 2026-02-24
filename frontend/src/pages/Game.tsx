@@ -143,6 +143,7 @@ const Game: React.FC = () => {
   const [timePerMove, setTimePerMove] = useState<number | null>(null);
   const [turnStartedAt, setTurnStartedAt] = useState<string | null>(null);
   const [clockTick, setClockTick] = useState(0);
+  const [eloChange, setEloChange] = useState<number | null>(null);
 
   const ws = useRef<WebSocket | null>(null);
   const phaseRef = useRef<GamePhase>('loading');
@@ -238,6 +239,9 @@ const Game: React.FC = () => {
             if (data.checkmate) setGameOverReason('Checkmate');
             else if (data.stalemate) setGameOverReason('Stalemate');
             else setGameOverReason('Draw');
+            if (data.elo_change_white != null && data.elo_change_black != null) {
+              setEloChange(mySideRef.current === 'w' ? data.elo_change_white : data.elo_change_black);
+            }
           }
         } else if (data.type === 'game_over') {
           updatePhase('finished');
@@ -246,6 +250,9 @@ const Game: React.FC = () => {
           const reasons: Record<string, string> = { resign: 'Resignation', timeout: 'Time ran out' };
           setGameOverReason(reasons[data.reason] || 'Game Over');
           if (data.fen) setGame(new Chess(data.fen));
+          if (data.elo_change_white != null && data.elo_change_black != null) {
+            setEloChange(mySideRef.current === 'w' ? data.elo_change_white : data.elo_change_black);
+          }
         } else if (data.type === 'error') {
           console.error('Server:', data.message);
           if (data.message.includes('not a player')) {
@@ -487,7 +494,18 @@ const Game: React.FC = () => {
           <div className="card">
             {phase === 'finished' ? (
               <div className="text-center">
-                <p className="text-lg font-bold text-white mb-1">{resultText}</p>
+                <p className="text-lg font-bold text-white mb-1">
+                  {resultText}
+                  {eloChange !== null && (
+                    <span
+                      className={`ml-2 inline-block animate-[fadeScale_0.4s_ease-out] ${
+                        eloChange > 0 ? 'text-emerald-400' : eloChange < 0 ? 'text-red-400' : 'text-zinc-400'
+                      }`}
+                    >
+                      {eloChange > 0 ? '+' : ''}{eloChange} Elo
+                    </span>
+                  )}
+                </p>
                 <p className="text-zinc-500 text-sm">{gameOverReason}</p>
                 <button onClick={() => navigate('/')} className="btn-primary mt-4 w-full flex items-center justify-center gap-2">
                   <RotateCcw size={16} /> New Game

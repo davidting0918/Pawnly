@@ -213,29 +213,34 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                     now_iso = datetime.now(timezone.utc).isoformat()
                     turn_start_cache[room_code] = now_iso
 
-                    await manager.broadcast(
-                        {
-                            "type": "update",
-                            "fen": board.fen(),
-                            "last_move": {
-                                "from": data["from"],
-                                "to": data["to"],
-                                "san": san,
-                                "color": color,
-                                "move_number": move_number,
-                            },
-                            "turn": "w" if board.turn == chess.WHITE else "b",
-                            "check": board.is_check(),
-                            "checkmate": board.is_checkmate(),
-                            "stalemate": board.is_stalemate(),
-                            "game_over": board.is_game_over(),
-                            "status": status,
-                            "winner_id": winner_id,
-                            "turn_started_at": now_iso,
-                            "time_per_move": time_per_move,
+                    broadcast_payload = {
+                        "type": "update",
+                        "fen": board.fen(),
+                        "last_move": {
+                            "from": data["from"],
+                            "to": data["to"],
+                            "san": san,
+                            "color": color,
+                            "move_number": move_number,
                         },
-                        room_code,
-                    )
+                        "turn": "w" if board.turn == chess.WHITE else "b",
+                        "check": board.is_check(),
+                        "checkmate": board.is_checkmate(),
+                        "stalemate": board.is_stalemate(),
+                        "game_over": board.is_game_over(),
+                        "status": status,
+                        "winner_id": winner_id,
+                        "turn_started_at": now_iso,
+                        "time_per_move": time_per_move,
+                    }
+
+                    if board.is_game_over():
+                        elo_result = await game_service.update_elo_after_game(game["id"], winner_id)
+                        if elo_result:
+                            broadcast_payload["elo_change_white"] = elo_result["elo_change_white"]
+                            broadcast_payload["elo_change_black"] = elo_result["elo_change_black"]
+
+                    await manager.broadcast(broadcast_payload, room_code)
 
                     if board.is_game_over():
                         boards_cache.pop(room_code, None)
@@ -264,15 +269,17 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                 await game_service.update_game_state(
                     game["id"], board.fen(), board.board_fen(), "finished", winner_id
                 )
-                await manager.broadcast(
-                    {
-                        "type": "game_over",
-                        "reason": "timeout",
-                        "winner_id": winner_id,
-                        "fen": board.fen(),
-                    },
-                    room_code,
-                )
+                timeout_payload: Dict[str, Any] = {
+                    "type": "game_over",
+                    "reason": "timeout",
+                    "winner_id": winner_id,
+                    "fen": board.fen(),
+                }
+                elo_result = await game_service.update_elo_after_game(game["id"], winner_id)
+                if elo_result:
+                    timeout_payload["elo_change_white"] = elo_result["elo_change_white"]
+                    timeout_payload["elo_change_black"] = elo_result["elo_change_black"]
+                await manager.broadcast(timeout_payload, room_code)
                 boards_cache.pop(room_code, None)
                 turn_start_cache.pop(room_code, None)
 
@@ -286,15 +293,17 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                 await game_service.update_game_state(
                     game["id"], board.fen(), board.board_fen(), "finished", winner_id
                 )
-                await manager.broadcast(
-                    {
-                        "type": "game_over",
-                        "reason": "resign",
-                        "winner_id": winner_id,
-                        "fen": board.fen(),
-                    },
-                    room_code,
-                )
+                resign_payload: Dict[str, Any] = {
+                    "type": "game_over",
+                    "reason": "resign",
+                    "winner_id": winner_id,
+                    "fen": board.fen(),
+                }
+                elo_result = await game_service.update_elo_after_game(game["id"], winner_id)
+                if elo_result:
+                    resign_payload["elo_change_white"] = elo_result["elo_change_white"]
+                    resign_payload["elo_change_black"] = elo_result["elo_change_black"]
+                await manager.broadcast(resign_payload, room_code)
                 boards_cache.pop(room_code, None)
                 turn_start_cache.pop(room_code, None)
 
