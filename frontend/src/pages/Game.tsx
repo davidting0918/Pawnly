@@ -6,6 +6,7 @@ import { useSelector } from 'react-redux';
 import type { RootState } from '../store/store';
 import apiClient from '../api/axios';
 import { ArrowLeft, Copy, Check, WifiOff, Flag, RotateCcw, Clock, ShieldX, Timer } from 'lucide-react';
+import { CaptureEffect, CheckmateOverlay, useSquareHighlights, findKingSquare } from '../components/BoardEffects';
 
 type GamePhase = 'loading' | 'joining' | 'waiting' | 'playing' | 'finished' | 'blocked';
 
@@ -145,6 +146,12 @@ const Game: React.FC = () => {
   const [clockTick, setClockTick] = useState(0);
   const [eloChange, setEloChange] = useState<number | null>(null);
 
+  const [lastMoveSquares, setLastMoveSquares] = useState<{ from: string; to: string; san: string } | null>(null);
+  const [captureSquare, setCaptureSquare] = useState<string | null>(null);
+  const [showCheckmate, setShowCheckmate] = useState(false);
+  const [boardSize, setBoardSize] = useState(0);
+  const boardContainerRef = useRef<HTMLDivElement>(null);
+
   const ws = useRef<WebSocket | null>(null);
   const phaseRef = useRef<GamePhase>('loading');
   const mySideRef = useRef<'w' | 'b' | null>(null);
@@ -180,6 +187,30 @@ const Game: React.FC = () => {
       ws.current.send(JSON.stringify({ type: 'timeout' }));
     }
   }, [clockTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Track board container size for effects overlay
+  useEffect(() => {
+    const el = boardContainerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver((entries) => {
+      for (const e of entries) setBoardSize(e.contentRect.width);
+    });
+    obs.observe(el);
+    setBoardSize(el.clientWidth);
+    return () => obs.disconnect();
+  }, [phase]);
+
+  // Square highlight styles (last move + check)
+  const checkSquare = useMemo(() => {
+    if (!game.isCheck()) return null;
+    return findKingSquare(game.fen(), game.turn());
+  }, [game]);
+
+  const squareHighlights = useSquareHighlights({
+    lastMove: lastMoveSquares,
+    isCheck: game.isCheck(),
+    checkSquare,
+  });
 
   // ── WebSocket setup ──
   useEffect(() => {
@@ -218,6 +249,12 @@ const Game: React.FC = () => {
         } else if (data.type === 'update') {
           setGame(new Chess(data.fen));
           if (data.last_move) {
+            // Track last move for highlighting
+            setLastMoveSquares({ from: data.last_move.from, to: data.last_move.to, san: data.last_move.san });
+            // Detect capture → trigger explosion
+            if (data.last_move.san && data.last_move.san.includes('x')) {
+              setCaptureSquare(data.last_move.to);
+            }
             setMoveHistory((prev) => {
               const dup = prev.some(
                 (m) => m.move_number === data.last_move.move_number && m.color === data.last_move.color
@@ -236,8 +273,10 @@ const Game: React.FC = () => {
             updatePhase('finished');
             setWinnerId(data.winner_id ?? null);
             setTurnStartedAt(null);
-            if (data.checkmate) setGameOverReason('Checkmate');
-            else if (data.stalemate) setGameOverReason('Stalemate');
+            if (data.checkmate) {
+              setGameOverReason('Checkmate');
+              setShowCheckmate(true);
+            } else if (data.stalemate) setGameOverReason('Stalemate');
             else setGameOverReason('Draw');
             if (data.elo_change_white != null && data.elo_change_black != null) {
               setEloChange(mySideRef.current === 'w' ? data.elo_change_white : data.elo_change_black);
@@ -465,7 +504,7 @@ const Game: React.FC = () => {
             timeLeft={topTimeLeft}
             hasTimer={!!timePerMove}
           />
-          <div className="rounded-2xl overflow-hidden shadow-2xl shadow-black/50 border border-zinc-800">
+          <div ref={boardContainerRef} className="relative rounded-2xl overflow-hidden shadow-2xl shadow-black/50 border border-zinc-800">
             <Chessboard
               options={{
                 position: game.fen(),
@@ -475,8 +514,24 @@ const Game: React.FC = () => {
                 lightSquareStyle: { backgroundColor: '#e9edcc' },
                 animationDurationInMs: 200,
                 allowDragging: phase === 'playing' && isMyTurn,
+                squareStyles: squareHighlights,
               }}
             />
+            {/* Effects overlay */}
+            {captureSquare && boardSize > 0 && (
+              <CaptureEffect
+                square={captureSquare}
+                boardSize={boardSize}
+                orientation={boardOrientation}
+                onDone={() => setCaptureSquare(null)}
+              />
+            )}
+            {showCheckmate && boardSize > 0 && (
+              <CheckmateOverlay
+                boardSize={boardSize}
+                isWinner={!!winnerId && !!user && winnerId === user.id}
+              />
+            )}
           </div>
           <PlayerBar
             name={bottomName}
